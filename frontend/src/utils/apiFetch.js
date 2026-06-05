@@ -3,7 +3,7 @@ const getApiBaseUrl = () => {
   if (isLocal) {
     return "http://127.0.0.1:8000/api";
   }
-  return "welcoming-manifestation-production-0608.up.railway.app/api"; 
+  return "https://helpdesksys-backend.onrender.com/api"; 
 };
 
 const API_BASE_URL = getApiBaseUrl();
