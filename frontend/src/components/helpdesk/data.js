@@ -1,0 +1,62 @@
+export const TICKETS = [
+  {
+    id: "DMFB-8292",
+    requester: "A. Okafor",
+    branch: "Branch 3 — Operations",
+    category: "Core Banking",
+    priority: "Critical",
+    slaTotalMin: 60,
+    slaRemainingMin: 7,
+    status: "In Progress",
+  },
+  {
+    id: "DMFB-8301",
+    requester: "F. Adeyemi",
+    branch: "HQ — Treasury",
+    category: "Cards",
+    priority: "High",
+    slaTotalMin: 120,
+    slaRemainingMin: 38,
+    status: "Open",
+  },
+  {
+    id: "DMFB-8142",
+    requester: "O. Benson",
+    branch: "Branch 1 — Retail",
+    category: "HR",
+    priority: "Low",
+    slaTotalMin: 480,
+    slaRemainingMin: -45, // Overdue/Breached
+    status: "Pending Approval",
+  },
+  {
+    id: "DMFB-8220",
+    requester: "J. Ibrahim",
+    branch: "Branch 5 — Cleared",
+    category: "Network",
+    priority: "Medium",
+    slaTotalMin: 240,
+    slaRemainingMin: 180,
+    status: "Open",
+  },
+  {
+    id: "DMFB-8090",
+    requester: "S. Johnson",
+    branch: "HQ — Compliance",
+    category: "Compliance",
+    priority: "High",
+    slaTotalMin: 120,
+    slaRemainingMin: 15,
+    status: "In Progress",
+  },
+  {
+    id: "DMFB-7998",
+    requester: "M. Gado",
+    branch: "Branch 2 — Retail",
+    category: "ATM",
+    priority: "Critical",
+    slaTotalMin: 60,
+    slaRemainingMin: -12, // Overdue/Breached
+    status: "Open",
+  }
+];
