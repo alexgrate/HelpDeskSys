@@ -9,7 +9,15 @@ import {
 import { cn } from "../utils/cn";
 import { apiFetch } from "../utils/apiFetch";
 
-const API_BASE_URL = "http://127.0.0.1:8000/api"; // Django API endpoint URL
+const getApiBaseUrl = () => {
+  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (isLocal) {
+    return "http://127.0.0.1:8000/api";
+  }
+  return "https://helpdesksys.onrender.com/api"; 
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 /* ─────────────── Catalog configuration ─────────────── */
 

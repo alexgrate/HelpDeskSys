@@ -316,6 +316,29 @@ function TicketHeader({ ticket }) {
         <Meta icon={Tag} label="Classified Category" value={ticket.problem_type} sub="Automatic Classification" />
         <Meta icon={Calendar} label="Date Submitted" value={new Date(ticket.created_at).toLocaleDateString()} sub={new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} />
       </div>
+
+      {ticket.attachments && ticket.attachments.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-slate-100 text-left">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-2">Attached Evidence / Screenshots</div>
+          <div className="flex flex-wrap gap-2">
+            {ticket.attachments.map((att) => {
+              const fileName = att.file.split("/").pop();
+              return (
+                <a 
+                  key={att.id}
+                  href={att.file}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-[11px] font-bold px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 text-slate-600 hover:text-slate-800 shadow-sm transition-all cursor-pointer"
+                >
+                  <FileText className="size-4 text-slate-400 shrink-0" />
+                  <span className="truncate max-w-[150px]">{fileName}</span>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </motion.section>
   );
 }
