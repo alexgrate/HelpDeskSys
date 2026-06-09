@@ -365,6 +365,13 @@ function ActionBar({ ticket, currentUser, onResolve, onRequestOverride, onTicket
   const isAssignee = ticket.assignee === currentUser?.id;
   const isUnassigned = !ticket.assignee;
 
+  const isResolvedOrClosed = ticket.status === "Resolved" || ticket.status === "Closed";
+  const isPendingApproval = ticket.status === "Pending Manager Approval";
+
+  if (isResolvedOrClosed || isPendingApproval) {
+    return null
+  }
+
   // Handles Take Ownership updates dynamically using the general serializer
   const handleAssignToMe = async () => {
     try {
@@ -436,8 +443,9 @@ function ActionBar({ ticket, currentUser, onResolve, onRequestOverride, onTicket
       </button>
 
       {/* 3. Override request action: Only available to non-manager roles */}
-      {!isManager && <ActionBtn icon={ShieldCheck} label="Request Override" onClick={onRequestOverride} disabled={isUnassigned} />}
+      {!isManager && <ActionBtn icon={ShieldCheck} label="Request Manager Approval" onClick={onRequestOverride} disabled={isUnassigned} />}
       
+
       <div className="ml-auto">
         {/* 4. Resolution Action:
             - Unlocked for Agents & Admins who have claimed ownership [4].

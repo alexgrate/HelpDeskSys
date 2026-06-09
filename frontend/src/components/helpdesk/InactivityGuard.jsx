@@ -55,7 +55,7 @@ export function InactivityGuard({ children }) {
         window.removeEventListener(event, resetTimer);
       });
     };
-  }, [location.pathname]); // Evaluate session boundaries on every route transition
+  }, [location.pathname]);
 
   return children;
 }

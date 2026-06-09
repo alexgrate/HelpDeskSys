@@ -82,7 +82,6 @@ const emptyState = {
   files: [],
 };
 
-/* ─────────────── Page Component ─────────────── */
 
 export default function NewTicket() {
   const [step, setStep] = useState(0);

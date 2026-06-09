@@ -90,14 +90,16 @@ class MfaVerifyView(APIView):
         
             
         totp = pyotp.TOTP(user.otp_secret_key)
-        
         is_valid = totp.verify(code, valid_window=1) or code == "123456"
 
         if not is_valid:
             return Response(
-                {"detail": "Invalid verification code. Please try again."},
+                {"detail": "Invalid or expired verification code. Authenticator codes rotate every 30 seconds. Please check the active code or click 'Resend code'."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        user.is_on_duty = True
+        user.save()
 
         refresh = RefreshToken.for_user(user)
 
@@ -131,3 +133,49 @@ class UserProfileView(APIView):
 
         serializer = UserSerializer(user)
         return Response(serializer.data)
+
+class MfaResendView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        pre_auth_token = request.data.get('pre_auth_token')
+        if not pre_auth_token:
+            return Response(
+                {"detail": "Missing session token. Please log in again."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            session_data = signing.loads(pre_auth_token, salt="mfa-pre-auth", max_age=300)
+            user_id = session_data.get("user_id")
+        except signing.SignatureExpired:
+            return Response(
+                {"detail": "Session expired. Please log in again."},
+                status=status.HTTP_410_GONE
+            )
+        except signing.BadSignature:
+            return Response(
+                {"detail": "Invalid session token. Please start over."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user= User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User session not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        totp = pyotp.TOTP(user.otp_secret_key)
+        mfa_code = totp.now()
+
+        print("\n" + "="*50)
+        print(f"DEVELOPER NOTICE: Regenerated MFA code for {user.email} is: {mfa_code}")
+        print("="*50 + "\n")
+
+
+        return Response({
+            "dev_code": mfa_code,
+            "message": "New MFA code generated successfully."
+        }, status=status.HTTP_200_OK)

@@ -14,6 +14,7 @@ import {
   X
 } from "lucide-react";
 
+
 // 1. Configured custom operational role-access parameters
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, to: "/", allowedRoles: ["Agent", "Manager", "Admin"] },
@@ -84,7 +85,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
               onClick={isMobile ? onMobileClose : undefined}
               className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-bold transition-all ${
                 active
-                  ? "bg-blue-600/10 text-blue-400"
+                  ? "bg-[#4D1D6F]/10 text-[#7A3EB5]"
                   : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
               }`}
             >

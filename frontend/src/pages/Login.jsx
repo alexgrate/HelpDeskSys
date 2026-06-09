@@ -5,6 +5,7 @@ import { Building2, Lock, Mail, ShieldCheck, KeyRound, ArrowRight, Fingerprint, 
 
 const cn = (...classes) => classes.filter(Boolean).join(" ");
 
+
 const getApiBaseUrl = () => {
   const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   if (isLocal) {
@@ -69,7 +70,7 @@ export default function Login() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-slate-50/50 text-slate-900 font-sans">
       
-      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-[#0B1329] text-slate-200 overflow-hidden">
+      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-[#240C54] text-slate-200 overflow-hidden">
         <div className="absolute inset-0 opacity-25 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-500 via-transparent to-transparent" />
         <div className="absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
 
@@ -201,7 +202,7 @@ export default function Login() {
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full h-11 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                    className="w-full h-11 rounded-xl bg-[#4D1D6F] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#3C1658] transition-colors shadow-sm cursor-pointer disabled:opacity-50"
                   >
                     {isLoading ? "Authenticating..." : "Continue"} <ArrowRight className="h-4 w-4" />
                   </button>
@@ -256,6 +257,8 @@ function MfaStep({ email, preAuthToken, devCode, onBack, onSuccess }) {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const [activeDevCode, setActiveDevCode] = useState(devCode);
+
   const [countdown, setCountdown] = useState(29)
   const [canResend, setCanResend] = useState(false)
 
@@ -265,13 +268,35 @@ function MfaStep({ email, preAuthToken, devCode, onBack, onSuccess }) {
     return () => clearTimeout(t);
   }, [countdown]);
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (!canResend || isLoading) return;
-    setCountdown(29);
-    setCanResend(false);
-    setDigits(["", "", "", "", "", ""]);
+
+    setIsLoading(true);
     setError("");
-    refs.current[0]?.focus();
+    
+    try{
+      const response = await fetch(`${API_BASE_URL}/auth/mfa/resend/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pre_auth_token: preAuthToken })
+      });
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to generate a new verification code.")
+      }
+
+      setActiveDevCode(data.dev_code)
+      setCountdown(29)
+      setCanResend(false)
+      setDigits(["", "", "", "", "", ""])
+      refs.current[0]?.focus()
+    } catch (err) {
+      setError(err.message || "Network error. Unable to connect to server.")
+    } finally {
+      setIsLoading(false)
+    }
   };
 
   const refs = useRef([]);
@@ -357,9 +382,9 @@ function MfaStep({ email, preAuthToken, devCode, onBack, onSuccess }) {
           <strong className="text-slate-800 font-bold">{email || "your corporate inbox"}</strong>.
         </p>
 
-        {devCode && (
+        {activeDevCode && (
           <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 font-bold leading-relaxed">
-            <span className="text-amber-950 font-black">DEVELOPER NOTICE:</span> For remote testing, your active MFA code is: <span className="font-mono bg-white px-2 py-0.5 rounded border border-amber-200 text-amber-900 font-black ml-1 text-sm select-all">{devCode}</span>
+            <span className="text-amber-950 font-black">DEVELOPER NOTICE:</span> For remote testing, your active MFA code is: <span className="font-mono bg-white px-2 py-0.5 rounded border border-amber-200 text-amber-900 font-black ml-1 text-sm select-all">{activeDevCode}</span>
           </div>
         )}
       </div>
@@ -394,7 +419,7 @@ function MfaStep({ email, preAuthToken, devCode, onBack, onSuccess }) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full h-11 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+          className="w-full h-11 rounded-xl bg-[#4D1D6F] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#3C1658] transition-colors shadow-sm cursor-pointer disabled:opacity-50"
         >
           {isLoading ? "Verifying..." : "Verify & sign in"} <ArrowRight className="h-4 w-4" />
         </button>

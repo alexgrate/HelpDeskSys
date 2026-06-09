@@ -21,10 +21,6 @@ function onTokenRefreshed(newAccessToken) {
   refreshSubscribers = [];
 }
 
-/**
- * Custom fetch client that handles automatic base URLs, token injection,
- * silent 401 interception, queued retries, and expired session logging out.
- */
 export async function apiFetch(endpoint, options = {}) {
   // 1. Resolve full URL
   const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;

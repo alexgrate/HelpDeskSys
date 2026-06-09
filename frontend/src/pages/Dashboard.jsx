@@ -34,7 +34,7 @@ export default function Dashboard() {
 
     setUser(JSON.parse(storedUser));
 
-    // 2. Fetch all tickets (Django view permits agents/admins to query all rows)
+    // 2. Fetch all tickets 
     const fetchQueue = async () => {
       try {
         const response = await apiFetch("/tickets/")

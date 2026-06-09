@@ -9,17 +9,10 @@ export function Topbar({ onMenu }) {
   const dropdownRef = useRef(null);
   
   const [profileOpen, setProfileOpen] = useState(false);
-  const [dutyState, setDutyState] = useState("on-duty");
 
   // Dynamically initialize user profile data from localStorage on load
   const [currentUser, setCurrentUser] = useState(() => {
     return JSON.parse(localStorage.getItem("user") || "{}");
-  });
-
-  // Dynamically initialize availability status from the Django database profile payload
-  const [isAvailable, setIsAvailable] = useState(() => {
-    const userPayload = JSON.parse(localStorage.getItem("user") || "{}");
-    return userPayload.is_on_duty !== undefined ? userPayload.is_on_duty : true;
   });
 
   // Close profile dropdown when clicking outside
@@ -33,36 +26,21 @@ export function Topbar({ onMenu }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 1. Dynamic Availability Patch Handler (Tied to Django PATCH /users/me/)
-  const handleAvailabilityToggle = async (newStatus) => {
-    // Optimistically update local UI state
-    setIsAvailable(newStatus);
-
-    try {
-      const response = await apiFetch("/users/me/", {
-        method: "PATCH",
-        body: JSON.stringify({ is_on_duty: newStatus }),
-      });
-
-      if (response.ok) {
-        const updatedUser = await response.json();
-        // Save the updated profile to localStorage to keep views synchronized
-        localStorage.setItem("user", JSON.stringify(updatedUser));
-        setCurrentUser(updatedUser);
-      } else {
-        // Rollback state if server rejection occurs
-        setIsAvailable(!newStatus);
-      }
-    } catch (err) {
-      console.error("Failed to persist availability status to database:", err);
-      setIsAvailable(!newStatus); // Rollback
-    }
-  };
-
-  // 2. Functional Sign Out routine
+  // Functional Sign Out routine
   const handleSignOut = async () => {
     const refreshToken = localStorage.getItem("refresh_token");
 
+    // 1. AUTOMATION CHANGE: Set off-duty in the database before signing out [3]
+    try {
+      await apiFetch("/users/me/", {
+        method: "PATCH",
+        body: JSON.stringify({ is_on_duty: false }),
+      });
+    } catch (err) {
+      console.warn("Failed to set off-duty status on backend:", err);
+    }
+
+    // 2. Blacklist the refresh token on the Django server
     if (refreshToken) {
       try {
         await apiFetch("/auth/logout/", {
@@ -74,6 +52,7 @@ export function Topbar({ onMenu }) {
       }
     }
 
+    // 3. Clear credentials and session payloads from browser storage
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     localStorage.removeItem("user");
@@ -85,6 +64,7 @@ export function Topbar({ onMenu }) {
     : currentUser.email ? currentUser.email.split('@')[0] : "Staff Member";
 
   const displayInitials = currentUser.first_name ? currentUser.first_name[0] : "U";
+  const roleLabel = currentUser ? `${currentUser.role} · ${currentUser.branch?.split("—")[0]?.trim() || "HQ"}` : "";
 
   return (
     <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-4 md:px-6 shrink-0 relative">
@@ -108,26 +88,16 @@ export function Topbar({ onMenu }) {
       </div>
 
       {/* Control Indicators */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 text-left">
         
-        {/* Dynamic Status Badge */}
-        {isAvailable && dutyState === "on-duty" ? (
-          <button 
-            onClick={() => setProfileOpen(true)}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[11px] font-bold cursor-pointer"
-          >
-            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            On duty
-          </button>
-        ) : (
-          <button 
-            onClick={() => setProfileOpen(true)}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-500 border border-slate-200 text-[11px] font-bold cursor-pointer"
-          >
-            <span className="size-1.5 rounded-full bg-slate-400" />
-            Out of office
-          </button>
-        )}
+        {/* Dynamic Status Badge (Always On Duty while active session is running) */}
+        <button 
+          onClick={() => setProfileOpen(true)}
+          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[11px] font-bold cursor-pointer"
+        >
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          On duty
+        </button>
 
         {/* Notifications */}
         <button className="relative p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50 cursor-pointer">
@@ -149,16 +119,14 @@ export function Topbar({ onMenu }) {
               <div className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors leading-none">
                 {displayName}
               </div>
-              <div className="text-[10px] text-slate-400 font-medium mt-1 uppercase tracking-wider">{currentUser.role || "User"}</div>
+              <div className="text-[10px] text-slate-400 font-medium mt-1 uppercase tracking-wider">{roleLabel}</div>
             </div>
             
             <div className="relative">
-              <div className="h-9 w-9 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center border-2 border-white shadow-sm">
+              <div className="h-9 w-9 rounded-full bg-[#4D1D6F] text-white font-bold text-xs flex items-center justify-center border-2 border-white shadow-sm">
                 {displayInitials}
               </div>
-              <span className={`absolute bottom-0 right-0 size-2.5 rounded-full border-2 border-white ${
-                isAvailable && dutyState === "on-duty" ? "bg-emerald-500" : "bg-slate-400"
-              }`} />
+              <span className="absolute bottom-0 right-0 size-2.5 rounded-full border-2 border-white bg-emerald-500" />
             </div>
           </button>
 
@@ -174,7 +142,7 @@ export function Topbar({ onMenu }) {
               >
                 {/* 1. Header Profile Box */}
                 <div className="p-4 flex items-center gap-3 border-b border-slate-100">
-                  <div className="h-12 w-12 rounded-full bg-blue-600 text-white font-bold text-sm flex items-center justify-center shadow-inner">
+                  <div className="h-12 w-12 rounded-full bg-[#4D1D6F] text-white font-bold text-sm flex items-center justify-center shadow-inner">
                     {displayInitials}
                   </div>
                   <div>
@@ -183,62 +151,18 @@ export function Topbar({ onMenu }) {
                   </div>
                 </div>
 
-                {/* 2. Availability Switch Control */}
-                <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50/50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Power className={`size-4 ${isAvailable ? "text-emerald-500" : "text-slate-400"}`} />
-                      <span className="text-xs font-bold text-slate-800">Availability</span>
-                    </div>
-                    
-                    {/* iOS Switch Selector - WIRED to active handler */}
-                    <button
-                      onClick={() => handleAvailabilityToggle(!isAvailable)}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-                        isAvailable ? "bg-emerald-500" : "bg-slate-200"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                          isAvailable ? "translate-x-5" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
+                {/* 2. AUTOMATION CHANGE: Replaced interactive switch with active session badge [3] */}
+                <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div className="flex items-center gap-2">
+                    <Power className="size-4 text-emerald-500" />
+                    <span className="text-xs font-bold text-slate-800">Operational Status</span>
                   </div>
-                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
-                    {isAvailable 
-                      ? "Active. New tickets can be routed to you." 
-                      : "Inactive. Routing system will bypass your queue."
-                    }
-                  </p>
-
-                  {/* On Duty / Out of Office Switch Button Group */}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      onClick={() => setDutyState("on-duty")}
-                      disabled={!isAvailable}
-                      className={`h-9 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                        dutyState === "on-duty" && isAvailable
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm"
-                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                      }`}
-                    >
-                      On duty
-                    </button>
-                    <button
-                      onClick={() => setDutyState("ooo")}
-                      disabled={!isAvailable}
-                      className={`h-9 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                        dutyState === "ooo" && isAvailable
-                          ? "bg-slate-100 text-slate-700 border-slate-300 shadow-sm"
-                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                      }`}
-                    >
-                      Out of office
-                    </button>
-                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-wider">
+                    On Duty
+                  </span>
                 </div>
 
+                {/* 3. Settings Navigation Menu list */}
                 <div className="py-1.5 border-b border-slate-100">
                   <button className="w-full h-10 px-4 hover:bg-slate-50 transition-colors flex items-center gap-3 text-xs font-bold text-slate-700 cursor-pointer">
                     <User className="size-4.5 text-slate-400" />
@@ -254,6 +178,7 @@ export function Topbar({ onMenu }) {
                   </button>
                 </div>
 
+                {/* 4. Functional Sign Out Trigger */}
                 <div className="p-1.5">
                   <button 
                     onClick={handleSignOut}

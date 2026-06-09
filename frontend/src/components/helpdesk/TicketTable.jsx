@@ -40,16 +40,47 @@ export function TicketTable({ tickets = [], isLoading, error, onTicketUpdate }) 
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(null);
 
+  // 1. FIXED: Sorting algorithm prioritizing breached tickets to the top [4]
   const rows = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return tickets;
-    return tickets.filter(
+    
+    // Filter rows by query
+    const filtered = tickets.filter(
       (t) =>
         t.ticket_id.toLowerCase().includes(q) ||
         t.summary.toLowerCase().includes(q) ||
         t.submitted_by_email.toLowerCase().includes(q) ||
         t.category.toLowerCase().includes(q)
     );
+
+    // Sort by operational priority
+    return [...filtered].sort((a, b) => {
+      const isA_Resolved = a.status === "Resolved" || a.status === "Closed";
+      const isB_Resolved = b.status === "Resolved" || b.status === "Closed";
+
+      // Put resolved/closed tickets at the very bottom
+      if (isA_Resolved && !isB_Resolved) return 1;
+      if (!isA_Resolved && isB_Resolved) return -1;
+      if (isA_Resolved && isB_Resolved) {
+        // If both are resolved, sort newest-first [4]
+        return new Date(b.updated_at) - new Date(a.updated_at);
+      }
+
+      // Calculate SLA remaining minutes for active tickets
+      const slaA = getSlaMetrics(a.created_at, a.priority, a.status, a.updated_at);
+      const slaB = getSlaMetrics(b.created_at, b.priority, b.status, b.updated_at);
+
+      const isA_Breached = slaA.remainingMin < 0;
+      const isB_Breached = slaB.remainingMin < 0;
+
+      // Put breached (overdue) tickets above on-track tickets
+      if (isA_Breached && !isB_Breached) return -1;
+      if (!isA_Breached && isB_Breached) return 1;
+
+      // If both are breached, or both are on-track:
+      // Sort oldest-first to prioritize older pending issues
+      return new Date(a.created_at) - new Date(b.created_at);
+    });
   }, [query, tickets]);
 
   return (
@@ -158,6 +189,7 @@ function TicketRow({ t, i, active, onToggle, onTicketUpdate }) {
 
   const isResolvedOrClosed = t.status === "Resolved" || t.status === "Closed";
   const isAssignee = t.assignee === currentUser?.id;
+  const isBreached = sla.remainingMin < 0 && !isResolvedOrClosed; // Active and overdue
 
   return (
     <>
@@ -166,7 +198,13 @@ function TicketRow({ t, i, active, onToggle, onTicketUpdate }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: i * 0.03, duration: 0.25 }}
         onClick={() => navigate(`/tickets/${t.id}`)}
-        className="hover:bg-slate-50/50 transition-colors group cursor-pointer"
+        className={cn(
+          "transition-colors group cursor-pointer border-t border-slate-200",
+          // FIXED: Red border-left and light rose background highlight for overdue rows [4]
+          isBreached 
+            ? "bg-rose-50/60 hover:bg-rose-50 border-l-4 border-l-rose-500" 
+            : "hover:bg-slate-50/50 bg-white"
+        )}
       >
         <td className="px-4 py-3.5 font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
           <span className="text-slate-400">#</span>{t.ticket_id}
@@ -175,7 +213,6 @@ function TicketRow({ t, i, active, onToggle, onTicketUpdate }) {
           <div className="font-semibold text-slate-900 text-xs">{t.submitted_by_email.split('@')[0]}</div>
           <div className="text-[10px] text-slate-400 font-medium">
             {t.branch || "HQ"}
-            {/* Expose active assignee directly on the row index metadata */}
             {t.assignee_name && (
               <span className="text-blue-600 font-bold ml-1.5">· Assigned: {t.assignee_name}</span>
             )}
@@ -192,7 +229,7 @@ function TicketRow({ t, i, active, onToggle, onTicketUpdate }) {
           </span>
         </td>
         <td className="px-4 py-3.5 whitespace-nowrap">
-          {/* FIXED: For resolved tickets, render a final resolution time summary, hiding progress bar */}
+          {/* Resolved/Closed display a final resolution time summary, hiding progress bar */}
           {isResolvedOrClosed ? (
             <div className="flex flex-col">
               <span className={cn(
@@ -227,13 +264,13 @@ function TicketRow({ t, i, active, onToggle, onTicketUpdate }) {
         </td>
       </motion.tr>
 
-      {/* Details actions panel */}
+      {/* Expanded details actions panel */}
       <AnimatePresence initial={false}>
         {active && !isResolvedOrClosed && (
           <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <td colSpan={7} className="bg-slate-50/50 px-4 py-2.5 border-t border-slate-200">
               {t.assignee && !isAssignee ? (
-                // FIXED: Notice for other operators if already claimed [4]
+                // Notice for other operators if already claimed [4]
                 <div className="text-xs font-bold text-slate-500 flex items-center gap-1.5 py-1">
                   <UserIcon className="size-4 text-blue-500" />
                   This ticket is currently assigned to and being worked on by <span className="text-slate-800 font-black">{t.assignee_name}</span>.
@@ -249,7 +286,7 @@ function TicketRow({ t, i, active, onToggle, onTicketUpdate }) {
                     disabled={isAssignee}
                   />
                   
-                  {/* FIXED: Enforce that an agent must take active ownership before resolving or escalating [4] */}
+                  {/* Enforce that an agent must take active ownership before resolving or escalating [4] */}
                   <QuickAction 
                     icon={ArrowUpRightFromSquare} 
                     label="Escalate Priority" 

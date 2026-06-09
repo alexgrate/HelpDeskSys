@@ -49,7 +49,7 @@ export default function ApprovalsPage() {
   const selected = approvals.find((a) => a.id === selectedId) || approvals[0];
   const pending = approvals.filter((a) => a.status === "Pending");
 
-  // Live decision handler sending POST /api/approvals/{id}/decide/
+  // Live decision handler 
   const decide = async (verdict) => {
     if (!selectedId) return;
     setDecideError("");
