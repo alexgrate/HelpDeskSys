@@ -251,7 +251,7 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_update(self, serializer):
-        instance = Ticket.objects.select_for_update().get(pk=self.instance.pk)
+        instance = Ticket.objects.select_for_update().get(pk=serializer.instance.pk)
 
         if 'assignee' in serializer.validated_data:
             new_assignee = serializer.validated_data.get('assignee')
