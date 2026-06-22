@@ -9,11 +9,18 @@ import StaffPortal from "./pages/StaffPortal";
 import NewTicket from "./pages/NewTicket";
 import TicketDetail from "./pages/TicketDetail";
 import Approvals from "./pages/Approvals";
+import AdminPage from "./pages/Admin";
+import KnowledgePage from "./pages/KnowledgePage";
+import ArticlePage from "./pages/ArticlePage";
+import ReportsPage from "./pages/ReportsPage";
+import NotificationsPage from "./pages/NotificationsPage";
+import AuditLogsPage from "./pages/AuditLogsPage";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 // Layout Shells
 import { AppShell } from "./components/helpdesk/AppShell";
 import { StaffShell } from "./components/helpdesk/StaffShell"; 
-
 import { InactivityGuard } from "./components/helpdesk/InactivityGuard";
 
 
@@ -26,8 +33,6 @@ function PagePlaceholder({ title }) {
   );
 }
 
-/* ─────────────── 1. Frontend Route Guard Component ─────────────── */
-
 function ProtectedRoute({ children, allowedRoles }) {
   const token = localStorage.getItem("access_token");
   const userStr = localStorage.getItem("user");
@@ -38,18 +43,29 @@ function ProtectedRoute({ children, allowedRoles }) {
 
   const user = JSON.parse(userStr);
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    if (user.role === "Staff") {
-      return <Navigate to="/staff-portal" replace />;
-    } else {
-      return <Navigate to="/" replace />;
+  if (user.role === "Admin") {
+    return children;
+  }
+
+  if (allowedRoles) {
+
+    const isAuthorized = allowedRoles.some(role => {
+      if (role === "Staff") return user.role === "Staff";
+      if (role === "Agent") return user.is_agent;
+      if (role === "Admin") return user.role === "Admin";
+      if (role === "Approver") return user.can_approve;
+
+      return false
+    })
+
+    if (!isAuthorized) {
+      return <Navigate to={user.role === "Staff" ? "/staff-portal" : "/"} replace />
     }
   }
 
   return children;
 }
 
-/* ─────────────── 2. Adaptive Shell Component ─────────────── */
 
 function AdaptiveShell({ children }) {
   const userStr = localStorage.getItem("user");
@@ -65,7 +81,6 @@ function AdaptiveShell({ children }) {
 }
 
 /* ─────────────── 3. Custom Secure 404 View ─────────────── */
-
 function NotFound() {
   const token = localStorage.getItem("access_token");
   const userStr = localStorage.getItem("user");
@@ -108,80 +123,89 @@ function NotFound() {
 }
 
 /* ─────────────── 4. Application Router ─────────────── */
-
 export default function App() {
   return (
     <Router>
       <InactivityGuard>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Operational Dashboard Queue (Management & IT Roles Only) */}
           <Route path="/" element={
-            <ProtectedRoute allowedRoles={["Agent", "Manager", "Admin"]}>
+            <ProtectedRoute allowedRoles={["Agent", "Approver", "Admin"]}>
               <Dashboard />
             </ProtectedRoute>
           } />
-          <Route path="/my-tickets" element={
-            <ProtectedRoute allowedRoles={["Agent", "Manager", "Admin"]}>
-              <AppShell><PagePlaceholder title="My Tickets" /></AppShell>
-            </ProtectedRoute>
-          } />
           <Route path="/approvals" element={
-            <ProtectedRoute allowedRoles={["Manager"]}>
+            <ProtectedRoute allowedRoles={["Approver"]}>
               <Approvals />
             </ProtectedRoute>
           } />
           <Route path="/reports" element={
-            <ProtectedRoute allowedRoles={["Agent", "Manager", "Admin"]}>
-              <AppShell><PagePlaceholder title="Reports" /></AppShell>
-            </ProtectedRoute>
-          } />
-          <Route path="/queues" element={
-            <ProtectedRoute allowedRoles={["Agent", "Manager", "Admin"]}>
-              <AppShell><PagePlaceholder title="Department Queues" /></AppShell>
+            <ProtectedRoute allowedRoles={["Agent", "Approver", "Admin"]}>
+              <AppShell>
+                <ReportsPage />
+              </AppShell>
             </ProtectedRoute>
           } />
           <Route path="/audit-logs" element={
-            <ProtectedRoute allowedRoles={["Agent", "Manager", "Admin"]}>
-              <AppShell><PagePlaceholder title="Audit Logs" /></AppShell>
+            <ProtectedRoute allowedRoles={["Approver", "Admin"]}>
+              <AppShell>
+                <AuditLogsPage />
+              </AppShell>
             </ProtectedRoute>
           } />
           <Route path="/admin" element={
             <ProtectedRoute allowedRoles={["Admin"]}>
-              <AppShell><PagePlaceholder title="Admin Control Panel" /></AppShell>
+              <AdminPage />
             </ProtectedRoute>
           } />
 
           {/* Staff Portal Specific Routes */}
           <Route path="/staff-portal" element={
-            <ProtectedRoute allowedRoles={["Staff", "Agent", "Manager", "Admin"]}>
+            <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
               <StaffPortal focusRequests={false} />
             </ProtectedRoute>
           } />
           <Route path="/staff-portal/requests" element={
-            <ProtectedRoute allowedRoles={["Staff", "Agent", "Manager", "Admin"]}>
+            <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
               <StaffPortal focusRequests={true} />
             </ProtectedRoute>
           } />
           <Route path="/tickets/new" element={
-            <ProtectedRoute allowedRoles={["Staff", "Agent", "Manager", "Admin"]}>
+            <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
               <NewTicket />
             </ProtectedRoute>
           } />
 
           {/* Shared Routes wrapped in the new AdaptiveShell wrapper */}
           <Route path="/tickets/:id" element={
-            <ProtectedRoute allowedRoles={["Staff", "Agent", "Manager", "Admin"]}>
+            <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
               <AdaptiveShell>
                 <TicketDetail />
               </AdaptiveShell>
             </ProtectedRoute>
           } />
           <Route path="/kb" element={
-            <ProtectedRoute allowedRoles={["Staff", "Agent", "Manager", "Admin"]}>
+            <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
               <AdaptiveShell>
-                <PagePlaceholder title="Knowledge Base Help Directory" />
+                <KnowledgePage />
+              </AdaptiveShell>
+            </ProtectedRoute>
+          } />
+          <Route path="/kb/:slug" element={
+            <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
+              <AdaptiveShell>
+                <ArticlePage />
+              </AdaptiveShell>
+            </ProtectedRoute>
+          } />
+          <Route path="/notifications" element={
+            <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
+              <AdaptiveShell>
+                <NotificationsPage />
               </AdaptiveShell>
             </ProtectedRoute>
           } />

@@ -1,20 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Building2, Lock, Mail, ShieldCheck, KeyRound, ArrowRight, Fingerprint, AlertCircle } from "lucide-react";
+import { API_BASE_URL } from "../utils/apiFetch";
 
 const cn = (...classes) => classes.filter(Boolean).join(" ");
 
-
-const getApiBaseUrl = () => {
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (isLocal) {
-    return "http://127.0.0.1:8000/api";
-  }
-  return "https://helpdesksys.onrender.com/api"; 
-};
-
-const API_BASE_URL = getApiBaseUrl();
 
 export default function Login() {
   const [step, setStep] = useState("credentials"); 
@@ -30,8 +21,8 @@ export default function Login() {
     e.preventDefault();
     setError("");
 
-    if (email && !email.endsWith("@dashmfb.com")) {
-      setError("Use your corporate email address (e.g. name@dashmfb.com).");
+    if (email && !email.endsWith("@dash-mfb.com")) {
+      setError("Use your corporate email address (e.g. name@dash-mfb.com).");
       return;
     }
 
@@ -57,7 +48,6 @@ export default function Login() {
 
       if (data.step === "mfa") {
         setPreAuthToken(data.pre_auth_token);
-        setDevCode(data.dev_code)
         setStep("mfa");
       }
     } catch (err) {
@@ -169,7 +159,7 @@ export default function Login() {
                     type="email"
                     value={email}
                     onChange={setEmail}
-                    placeholder="firstname.lastname@dashmfb.com"
+                    placeholder="firstname.lastname@dash-mfb.com"
                     disabled={isLoading}
                   />
                   
@@ -182,9 +172,9 @@ export default function Login() {
                     placeholder="••••••••••••"
                     disabled={isLoading}
                     trailing={
-                      <button type="button" className="text-[10px] font-bold text-blue-600 hover:underline focus:outline-none">
+                      <Link to="/forgot-password" className="text-[10px] font-bold text-blue-600 hover:underline focus:outline-none">
                         Forgot?
-                      </button>
+                      </Link>
                     }
                   />
 
@@ -381,12 +371,6 @@ function MfaStep({ email, preAuthToken, devCode, onBack, onSuccess }) {
           Enter the 6-digit code from your authenticator app or the OTP we sent to{" "}
           <strong className="text-slate-800 font-bold">{email || "your corporate inbox"}</strong>.
         </p>
-
-        {activeDevCode && (
-          <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 font-bold leading-relaxed">
-            <span className="text-amber-950 font-black">DEVELOPER NOTICE:</span> For remote testing, your active MFA code is: <span className="font-mono bg-white px-2 py-0.5 rounded border border-amber-200 text-amber-900 font-black ml-1 text-sm select-all">{activeDevCode}</span>
-          </div>
-        )}
       </div>
 
       <form onSubmit={verifyMFA} className="space-y-5">

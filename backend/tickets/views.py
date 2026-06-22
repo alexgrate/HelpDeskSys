@@ -1,22 +1,206 @@
+import os, threading
+from datetime import timedelta
+from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
+from django.http import Http404, FileResponse, HttpResponse, HttpResponseForbidden
+from django.utils import timezone
+from django.db.models import (
+    Q, Count, F, Avg, Case, When, Value, IntegerField, DurationField, ExpressionWrapper
+)
+from django.db import transaction
+from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required
+from authentication.models import Role
 from rest_framework import status, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from .models import Ticket, TicketComment, ApprovalRequest
+from .models import Ticket, TicketCategory, TicketComment, ApprovalRequest, ApprovalStep, Department, Notification, TicketAttachment, SystemAuditLog
 from .serializers import (
-    TicketSerializer, TicketCreateSerializer, 
-    TicketCommentSerializer, TicketCommentCreateSerializer, ApprovalRequestSerializer # Added Comment serializers
+    TicketSerializer, TicketCreateSerializer, TicketCategorySerializer, 
+    TicketCommentSerializer, TicketCommentCreateSerializer, ApprovalRequestSerializer,
+    DepartmentSerializer, RoleSerializer, UserAdminSerializer, NotificationSerializer,
+    SystemAuditLogSerializer
 )
-from .permissions import IsNormalStaff, IsManagerOrAdmin
+from .permissions import IsNormalStaff, IsManagerOrAdmin, IsDepartmentAgentOrHOD
 
-DEPARTMENT_ROUTING = {
-    'it':         'IT Helpdesk',
-    'core':       'Core Banking Operations',
-    'cards':      'Cards Operations Team',
-    'facilities': 'Facilities Management',
-    'hr':         'Human Resources',
-    'compliance': 'Compliance & Risk',
-}
+User = get_user_model()
+
+COLOR_PALETTE = ["#3b82f6", "#1d4ed8", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#8b5cf6", "#ec4899", "#14b8a6"]
+
+def send_email_async(subject, message, recipient_list, html_message=None):
+    def send():
+        msg = EmailMultiAlternatives(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            recipient_list
+        )
+        if html_message:
+            msg.attach_alternative(html_message, "text/html")
+        msg.send(fail_silently=False)
+
+    thread = threading.Thread(target=send)
+    thread.start()
+
+class IsSystemAdmin(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.role_name == 'Admin'
+
+class DepartmentViewSet(viewsets.ModelViewSet):
+    queryset = Department.objects.all()
+    serializer_class = DepartmentSerializer
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsSystemAdmin()]
+
+    def perform_create(self, serializer):
+        dept = serializer.save()
+        log_system_action(
+            request=self.request,
+            action_text=f"Created new department queue: '{dept.name}'",
+            category="Config",
+            severity="Notice"
+        )
+
+    def perform_update(self, serializer):
+        old_dept = self.get_object()
+        old_name = old_dept.name
+        dept = serializer.save()
+        if old_name != dept.name:
+            log_system_action(
+                request=self.request,
+                action_text=f"Renamed department queue '{old_name}' to '{dept.name}'",
+                category="Config",
+                severity="Notice"
+            )
+
+    def perform_destroy(self, instance):
+        name = instance.name
+        instance.delete()
+        log_system_action(
+            request=self.request,
+            action_text=f"Deleted department queue: '{name}'",
+            category="Config",
+            severity="Critical"
+        )
+
+class RoleViewSet(viewsets.ModelViewSet):
+    queryset = Role.objects.all()
+    serializer_class = RoleSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsSystemAdmin()]
+
+    def perform_create(self, serializer):
+        role = serializer.save()
+        log_system_action(
+            request=self.request,
+            action_text=f"Created new security role boundary: '{role.name}'",
+            category="Config",
+            severity="Critical"
+        )
+
+    def perform_update(self, serializer):
+        old_role = self.get_object()
+        old_name = old_role.name
+        role = serializer.save()
+        if old_name != role.name:
+            log_system_action(
+                request=self.request,
+                action_text=f"Updated security role boundary: '{old_name}' to '{role.name}'",
+                category="Config",
+                severity="Critical"
+            )
+
+    def perform_destroy(self, instance):
+        name = instance.name
+        instance.delete()
+        log_system_action(
+            request=self.request,
+            action_text=f"Deleted security role boundary: '{name}'",
+            category="Config",
+            severity="Critical"
+        )
+
+class UserAdminViewSet(viewsets.ModelViewSet):
+    serializer_class = UserAdminSerializer
+    permission_classes = [permissions.IsAuthenticated, IsSystemAdmin]
+
+    def get_queryset(self):
+        return User.objects.all().annotate(
+            open_load=Count(
+                'assigned_tickets',
+                filter=~Q(assigned_tickets__status__in=['Resolved', 'Closed'])
+            )
+        ).order_by('first_name', 'last_name', 'email')
+
+    def perform_update(self, serializer):
+        old_instance = self.get_object()
+        old_dept = old_instance.department.name if old_instance.department else "None"
+        old_role = old_instance.role.name if old_instance.role else "None"
+        
+        user = serializer.save()
+        
+        new_dept = user.department.name if user.department else "None"
+        new_role = user.role.name if user.role else "None"
+        
+        changes = []
+        if old_dept != new_dept:
+            changes.append(f"Department Queue: '{old_dept}' -> '{new_dept}'")
+        if old_role != new_role:
+            changes.append(f"Role: '{old_role}' -> '{new_role}'")
+            
+        if changes:
+            log_system_action(
+                request=self.request,
+                action_text=f"Updated profile for {user.first_name} {user.last_name} ({user.email}): " + ", ".join(changes),
+                category="Role",
+                severity="Critical"
+            )
+
+    @action(detail=False, methods=['post'])
+    def invite(self, request):
+        email = request.data.get('email', '').strip()
+        first_name = request.data.get('first_name', '').strip()
+        last_name = request.data.get('last_name', '').strip()
+        role_id = request.data.get('role_id')
+        department_id = request.data.get('department_id')
+
+        if role_id in ["", "null", "None", None]:
+            role_id = None
+        if department_id in ["", "null", "None", None]:
+            department_id = None
+
+        if not email.endswith('@dash-mfb.com'):
+            return Response({"detail": "Only corporate emails ending with @dash-mfb.com are authorized for registration."}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(email=email).exists():
+            return Response({"detail": "An employee profile with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create_user(
+            email=email,
+            password="ChangeMe@Dash2026",
+            first_name=first_name,
+            last_name=last_name,
+            role_id=role_id,
+            department_id=department_id
+        )
+        
+        user.open_load = 0
+
+        log_system_action(
+            request=request,
+            action_text=f"Onboarded new team member: {user.first_name} {user.last_name} ({user.email})",
+            category="Role",
+            severity="Critical"
+        )
+
+        return Response(UserAdminSerializer(user).data, status=status.HTTP_201_CREATED)
+
 
 class TicketViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -29,20 +213,54 @@ class TicketViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'create':
             return [permissions.IsAuthenticated(), IsNormalStaff()]
+        if self.action in ['update', 'partial_update']:
+            return [permissions.IsAuthenticated(), IsDepartmentAgentOrHOD()]
         return [permissions.IsAuthenticated()]
+
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role_name != 'Admin':
+            return Response(
+                {"detail": "Unauthorized. Ticket deletion restricted to system administrators only."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
         user = self.request.user
-        if user.role == 'Staff':
 
-            return Ticket.objects.filter(submitted_by=user)
-        elif user.role in ['Agent', 'Admin']:
-            return Ticket.objects.exclude(status='Pending Manager Approval')
+        if user.role_name == 'Admin':
+            return Ticket.objects.all()
+
+        personal_query = Q(submitted_by=user)
         
-        return Ticket.objects.all()
+        if user.role_name == 'Agent':
+            if user.department:
+                category_keys = TicketCategory.objects.filter(team=user.department).values_list('key', flat=True)
+                return Ticket.objects.filter(personal_query | (Q(category__in=category_keys) & ~Q(status__startswith='Pending'))).distinct()
+            return Ticket.objects.filter(personal_query)
 
+        elif user.can_approve:
+            category_keys = []
+            if user.department:
+                category_keys = TicketCategory.objects.filter(team=user.department).values_list('key', flat=True)
+                pending_my_approval = Q(approval_requests__status='Pending', approval_requests__approver_role=user.role_name)
+                return Ticket.objects.filter(personal_query | Q(category__in=category_keys) | pending_my_approval).distinct()
+            return Ticket.objects.filter(personal_query)
+        
+        return Ticket.objects.filter(personal_query)
+
+    @transaction.atomic
     def perform_update(self, serializer):
-        instance = self.get_object()
+        instance = Ticket.objects.select_for_update().get(pk=self.instance.pk)
+
+        if 'assignee' in serializer.validated_data:
+            new_assignee = serializer.validated_data.get('assignee')
+            if instance.assignee and instance.assignee != new_assignee and new_assignee is not None:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(
+                    {"detail": f"Ownership conflict. This ticket has already been claimed by {instance.assignee.email}."}
+                )
+
         old_status = instance.status
         old_priority = instance.priority
         old_assignee = instance.assignee
@@ -50,6 +268,14 @@ class TicketViewSet(viewsets.ModelViewSet):
         updated_instance = serializer.save()
 
         if old_status != updated_instance.status:
+            log_system_action(
+                request=self.request,
+                action_text=f"Status changed from '{old_status}' to '{updated_instance.status}'",
+                category="Ticket",
+                ticket=updated_instance,
+                severity="Info"
+            )
+
             TicketComment.objects.create(
                 ticket=updated_instance,
                 comment_type='system',
@@ -57,6 +283,14 @@ class TicketViewSet(viewsets.ModelViewSet):
             )
             
         if old_priority != updated_instance.priority:
+            log_system_action(
+                request=self.request,
+                action_text=f"Priority changed from '{old_priority}' to '{updated_instance.priority}'",
+                category="SLA" if updated_instance.priority in ["High", "Critical"] else "Ticket",
+                ticket=updated_instance,
+                severity="Warning" if updated_instance.priority in ["High", "Critical"] else "Info"
+            )
+
             TicketComment.objects.create(
                 ticket=updated_instance,
                 comment_type='system',
@@ -72,7 +306,6 @@ class TicketViewSet(viewsets.ModelViewSet):
                 body=f"Assignee changed from '{old_name}' to '{new_name}' by {self.request.user.email}"
             )
 
-    # Action route: /api/tickets/{id}/comments/
     @action(detail=True, methods=['get', 'post'], permission_classes=[permissions.IsAuthenticated])
     def comments(self, request, pk=None):
         ticket = self.get_object()
@@ -92,23 +325,194 @@ class TicketViewSet(viewsets.ModelViewSet):
             comment = serializer.save()
             return Response(TicketCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def operations_analytics(self, request):
+        now_time = timezone.now()
+        start_time = now_time - timedelta(days=7)
+
+        categories_db = TicketCategory.objects.all().select_related('team')
+        categories_map = {c.key: c for c in categories_db}
+
+        tickets_7d = Ticket.objects.filter(created_at__gte=start_time)
+        resolved_7d = tickets_7d.filter(status__in=['Resolved', 'Closed'])
+
+        total_resolved = resolved_7d.count()
+
+        whens = []
+        for cat in categories_db:
+            for priority in ['Critical', 'High', 'Medium', 'Low']:
+                p_lower = priority.lower()
+                limit_hours = getattr(cat, f"sla_{p_lower}_hours", 4)
+                whens.append(
+                    When(category=cat.key, priority=priority, then=Value(limit_hours))
+                )
+
+        resolved_annotated = resolved_7d.annotate(
+            allowed_hours=Case(*whens, default=Value(4), output_field=IntegerField()),
+            time_spent=ExpressionWrapper(F('resolved_at') - F('created_at'), output_field=DurationField())
+        )
+
+        sla_compliant_count = 0
+        if total_resolved > 0:
+            sla_compliant_count = sum(
+                1 for t in resolved_annotated 
+                if t.time_spent <= timedelta(hours=t.allowed_hours)
+            )
+
+        compliance_rate = (sla_compliant_count / total_resolved * 100) if total_resolved > 0 else 0.0
+
+        avg_res_time_raw = resolved_7d.aggregate(avg_time=Avg(F('resolved_at') - F('created_at')))['avg_time']
+        if avg_res_time_raw:
+            total_seconds = int(avg_res_time_raw.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            avg_res_label = f"{hours}h {minutes}m"
+        else:
+            avg_res_label = "0h 0m"
+
+        volume_by_hour = [0] * 24
+        for t in tickets_7d:
+            local_dt = timezone.localtime(t.created_at)
+            volume_by_hour[local_dt.hour] += 1
+
+        category_counts = tickets_7d.values('category').annotate(count=Count('id'))
+        
+        departments_donut = []
+        for item in category_counts:
+            cat_key = item['category']
+            cat_obj = categories_map.get(cat_key)
+            name = cat_obj.label if cat_obj else str(cat_key).upper()
+            color = getattr(cat_obj, 'color', '#3b82f6') if cat_obj else '#64748b'
+
+            departments_donut.append({
+                "name": name,
+                "value": item['count'],
+                "color": color
+            })
+        
+        if not departments_donut:
+            for cat_key, cat_obj in categories_map.items():
+                departments_donut.append({
+                    "name": cat_obj.label,
+                    "value": 0,
+                    "color": getattr(cat_obj, 'color', '#64748b')
+                })
+
+        sla_by_dept = []
+        for cat_key, cat_obj in categories_map.items():
+            cat_resolved = resolved_annotated.filter(category=cat_key)
+            cat_total_resolved = cat_resolved.count()
+            cat_compliant = sum(
+                1 for t in cat_resolved 
+                if t.time_spent <= timedelta(hours=t.allowed_hours)
+            )
+
+            rate = (cat_compliant / cat_total_resolved * 100) if cat_total_resolved > 0 else 100.0
+            sla_by_dept.append({
+                "dept": cat_obj.label,
+                "rate": round(rate, 1)
+            })
+
+        active_agents_count = User.objects.filter(role__is_agent=True, is_on_duty=True).count()
+
+        return Response({
+            "kpis": {
+                "sla_compliance": f"{compliance_rate:.1f}%",
+                "avg_resolution": avg_res_label,
+                "tickets_per_day": str(max(1, tickets_7d.count() // 7)),
+                "active_agents": str(active_agents_count)
+            },
+            "volume_by_hour": volume_by_hour,
+            "departments": departments_donut,
+            "sla_by_dept": sla_by_dept
+        }, status=status.HTTP_200_OK)
+
+    
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def badge_analytics(self, request):
+        user = request.user
+
+        pending_approvals_count = 0
+        if user.can_approve or user.role_name == "Admin":
+            approvals_query = ApprovalRequest.objects.filter(status='Pending')
+            if user.role_name != 'Admin':
+                approvals_query = approvals_query.filter(
+                    approver_role = user.role_name,
+                    approver_department=user.department
+                )
+            pending_approvals_count = approvals_query.count()
+
+        my_workload_count = Ticket.objects.filter(
+            assignee=user
+        ).exclude(status__in=['Resolved', 'Closed']).count()
+
+        return Response({
+            "pending_approvals": pending_approvals_count,
+            "my_workload": my_workload_count
+        }, status=status.HTTP_200_OK)
+
+
+class TicketCategoryViewSet(viewsets.ModelViewSet):
+    queryset = TicketCategory.objects.all()  
+    serializer_class = TicketCategorySerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsSystemAdmin()]
+    
+    def perform_create(self, serializer):
+        category = serializer.save()
+        log_system_action(
+            request=self.request,
+            action_text=f"Created new ticket category: '{category.label}'",
+            category="Config",
+            severity="Notice"
+        )
+
+    def perform_update(self, serializer):
+        old_is_high_risk = self.get_object().is_high_risk
+        category = serializer.save()
+        
+        if old_is_high_risk != category.is_high_risk:
+            severity_level = "Critical" if category.is_high_risk else "Notice"
+            log_system_action(
+                request=self.request,
+                action_text=f"Modified category risk level: '{category.label}' -> {'High' if category.is_high_risk else 'Standard'} Risk",
+                category="Config",
+                severity=severity_level
+            )
+        else:
+            log_system_action(
+                request=self.request,
+                action_text=f"Updated settings for category: '{category.label}'",
+                category="Config",
+                severity="Notice"
+            )
 
 class ApprovalRequestViewSet(viewsets.ModelViewSet):
     serializer_class = ApprovalRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
-    http_method_names = ['get', 'post', 'head', 'options']  # Block PUT/PATCH/DELETE — approvals are decided, not edited
+    http_method_names = ['get', 'post', 'head', 'options']  
 
     def get_queryset(self):
-        return ApprovalRequest.objects.all()
+        user = self.request.user
+        if user.role_name == 'Admin':
+            return ApprovalRequest.objects.all()
+
+        pending_for_me = Q(status='Pending', approver_role=user.role_name, approver_department=user.department)
+        decided_by_me = Q(approved_by=user)
+        
+        return ApprovalRequest.objects.filter(pending_for_me | decided_by_me).distinct()
 
     def create(self, request, *args, **kwargs):
-        # Approval records are only created by the post_save signal, not via API
         return Response(
             {"detail": "Approval requests are generated automatically by the system."},
             status=status.HTTP_405_METHOD_NOT_ALLOWED
         )
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def decide(self, request, pk=None):
         approval = self.get_object()
 
@@ -118,18 +522,37 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if request.user.role_name != approval.approver_role and request.user.role_name != 'Admin':
+            return Response(
+                {"detail": f"Unauthorized. Only users with the active role ({approval.approver_role}) can approve this step."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if approval.ticket.submitted_by == request.user and request.user.role_name != 'Admin':
+            return Response(
+                {"detail": "Self-approval is prohibited under Dual-Control policies."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if request.user.role_name != 'Admin' and approval.approver_department:
+            if request.user.department != approval.approver_department:
+                return Response(
+                    {"detail": f"Unauthorized. This approval step is routed specifically to the {approval.approver_department.name} department."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
         verdict = request.data.get('status')
         comment = request.data.get('comment', '').strip()
 
-        if verdict not in ['Approved', 'Rejected']:
+        if verdict not in ['Approved', 'Rejected', 'Returned']:
             return Response(
-                {"detail": "Decision must be either 'Approved' or 'Rejected'."},
+                {"detail": "Decision must be either 'Approved', 'Rejected', or 'Returned'."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if verdict == 'Rejected' and not comment:
+        if verdict in ['Rejected', 'Returned'] and not comment:
             return Response(
-                {"detail": "Rejection requires a justification comment."},
+                {"detail": f"Justification comment is required when performing a {verdict} action."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -139,31 +562,318 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
         approval.save()
 
         ticket = approval.ticket
-        department = DEPARTMENT_ROUTING.get(ticket.category, 'Operations Team')
+
+        severity_level = "Warning" if verdict in ['Rejected', 'Returned'] else "Notice"
+        log_system_action(
+            request=request,
+            action_text=f"{verdict} approval step {approval.step_number} ({approval.approver_role}) for ticket {ticket.ticket_id}",
+            category="Approval",
+            ticket=ticket,
+            severity=severity_level
+        )
+
+        try:
+            category_obj = TicketCategory.objects.get(key=ticket.category)
+            department_name = category_obj.team.name
+        except TicketCategory.DoesNotExist:
+            department_name = "Operations Team"
+        
+        next_step = ApprovalStep.objects.filter(
+            category__key=ticket.category,
+            step_number__gt=approval.step_number
+        ).order_by('step_number').first()
+
+        prev_step = ApprovalStep.objects.filter(
+            category__key=ticket.category,
+            step_number__lt=approval.step_number
+        ).order_by('-step_number').first()
 
         if verdict == 'Approved':
-            ticket.status = 'In Progress'
-            ticket.save()
-            TicketComment.objects.create(
-                ticket=ticket,
-                comment_type='system',
-                body=(
-                    f"Override approved by {request.user.email}. "
-                    f"Ticket #{ticket.ticket_id} routed to {department} for active processing."
+            if next_step:
+                next_role_name = next_step.role.name
+                
+                try:
+                    category_obj = TicketCategory.objects.get(key=ticket.category)
+                    next_target_dept = next_step.department or category_obj.team
+                except TicketCategory.DoesNotExist:
+                    next_target_dept = None
+
+                existing_next = ApprovalRequest.objects.filter(ticket=ticket, step_number=next_step.step_number).first()
+                if existing_next:
+                    existing_next.status = 'Pending'
+                    existing_next.comment = None
+                    existing_next.approved_by = None
+                    existing_next.approver_department = next_target_dept 
+                    existing_next.save()
+                else:
+                    ApprovalRequest.objects.create(
+                        ticket=ticket,
+                        category=f"{ticket.category.upper()} - {next_role_name}",
+                        requested_by=ticket.submitted_by,
+                        status='Pending',
+                        approver_role=next_role_name,
+                        approver_department=next_target_dept, 
+                        step_number=next_step.step_number
+                    )
+                                    
+                ticket.status = f"Pending {next_role_name} Approval"
+                ticket.save()
+
+                TicketComment.objects.create(
+                    ticket=ticket,
+                    comment_type='system',
+                    body=(
+                        f"Level step {approval.step_number} ({approval.approver_role}) approved by {request.user.email}. "
+                        f"Ticket escalated to next level step {next_step.step_number} ({next_role_name}) for review."
+                    )
                 )
-            )
-        else: 
-            ticket.status = 'Closed' # Changed from 'Submitted' to 'Closed'
-            ticket.save()
-            TicketComment.objects.create(
-                ticket=ticket,
-                comment_type='system',
-                body=(
-                    f"Override rejected by {request.user.email}. "
-                    f"Reason: {comment}. Ticket closed."
+            else:
+                ticket.status = 'In Progress'
+                ticket.save()
+
+                TicketComment.objects.create(
+                    ticket=ticket,
+                    comment_type='system',
+                    body=(
+                        f"Compliance override fully authorized by {request.user.email}. "
+                        f"Ticket #{ticket.ticket_id} routed to {department_name} for active processing."
+                    )
                 )
-            )
+
+        elif verdict == 'Returned':
+            if prev_step:
+                prev_role_name = prev_step.role.name
+
+                prev_approval = ApprovalRequest.objects.filter(ticket=ticket, step_number=prev_step.step_number).first()
+                if prev_approval:
+                    prev_approval.status = 'Pending'
+                    try:
+                        category_obj = TicketCategory.objects.get(key=ticket.category)
+                        prev_target_dept = prev_step.department or category_obj.team
+                    except TicketCategory.DoesNotExist:
+                        prev_target_dept = None
+                    prev_approval.approver_department = prev_target_dept
+                    prev_approval.save()
+
+                ticket.status = f"Pending {prev_role_name} Approval"
+                ticket.save()
+
+                TicketComment.objects.create(
+                    ticket=ticket,
+                    comment_type='system',
+                    body=(
+                        f"Level step {approval.step_number} ({approval.approver_role}) requested a re-update. "
+                        f"Comment: '{comment}'. Routed back to previous step {prev_step.step_number} ({prev_role_name}) for review."
+                    )
+                )
+            else: 
+                ticket.status = 'Returned for Update'
+                ticket.save()
+                TicketComment.objects.create(
+                    ticket=ticket,
+                    comment_type='system',
+                    body=f"Returned for update by {request.user.email}. Reason: '{comment}'."
+                )
+
+        elif verdict == 'Rejected':
+            if prev_step:
+                prev_role_name = prev_step.role.name
+
+                prev_approval = ApprovalRequest.objects.filter(ticket=ticket, step_number=prev_step.step_number).first()
+                if prev_approval:
+                    prev_approval.status = 'Pending'
+                    try:
+                        category_obj = TicketCategory.objects.get(key=ticket.category)
+                        prev_target_dept = prev_step.department or category_obj.team
+                    except TicketCategory.DoesNotExist:
+                        prev_target_dept = None
+                    prev_approval.approver_department = prev_target_dept
+                    prev_approval.save()
+
+                ticket.status = f"Pending {prev_role_name} Approval"
+                ticket.save()
+
+                TicketComment.objects.create(
+                    ticket=ticket,
+                    comment_type='system',
+                    body=(
+                        f"Level step {approval.step_number} ({approval.approver_role}) proposed a Rejection. "
+                        f"Comment: '{comment}'. Routed back to previous step {prev_step.step_number} ({prev_role_name}) for final review."
+                    )
+                )
+            else:
+                ticket.status = 'Closed'
+                ticket.save()
+
+                TicketComment.objects.create(
+                    ticket=ticket,
+                    comment_type='system',
+                    body=f"Override rejected by {request.user.email}. Reason: '{comment}'. Ticket closed."
+                )
 
         response_data = ApprovalRequestSerializer(approval).data
-        response_data['routed_to'] = department if verdict == 'Approved' else None
         return Response(response_data, status=status.HTTP_200_OK)
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['get', 'patch', 'delete', 'options', 'head']  
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        self.get_queryset().filter(unread=True).update(unread=False)
+        return Response({"detail": "All notifications marked as read."}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def badge_analytics(self, request):
+        user = request.user
+
+        pending_approvals_count = 0
+        if user.can_approve or user.role_name == "Admin":
+            approvals_query = ApprovalRequest.objects.filter(status='Pending')
+            if user.role_name != 'Admin':
+                approvals_query = approvals_query.filter(
+                    approver_role=user.role_name,
+                    approver_department=user.department
+                )
+            pending_approvals_count = approvals_query.count()
+
+        my_workload_count = Ticket.objects.filter(
+            assignee=user
+        ).exclude(status__in=['Resolved', 'Closed']).count()
+
+        unread_notifications_count = Notification.objects.filter(
+            recipient=user, 
+            unread=True
+        ).count()
+
+        return Response({
+            "pending_approvals": pending_approvals_count,
+            "my_workload": my_workload_count,
+            "unread_notifications": unread_notifications_count 
+        }, status=status.HTTP_200_OK)
+
+@login_required
+def protected_media_serve(request, path):
+    # PATH TRAVERSAL DEFENSE: Resolve absolute paths and strip directory escape tokens
+    safe_path = os.path.normpath(path).lstrip('/')
+    if safe_path.startswith('..') or os.path.isabs(safe_path):
+        return HttpResponseForbidden("Access Denied: Path security violation.")
+
+    db_file_path = os.path.join('ticket_attachments', safe_path)
+
+    try:
+        attachment = TicketAttachment.objects.get(file=db_file_path)
+    except TicketAttachment.DoesNotExist:
+        raise Http404("Attachment not found in records.")
+        
+    ticket = attachment.ticket
+    user = request.user
+    authorized = False
+
+    if user.is_superuser or user.role_name == "Admin":
+        authorized = True
+    elif ticket.submitted_by == user:
+        authorized = True
+    elif ticket.assignee == user:
+        authorized = True
+    elif user.can_approve or user.is_agent:
+        try:
+            category_obj = TicketCategory.objects.get(key=ticket.category_id)
+            if user.department == category_obj.team:
+                authorized = True
+        except TicketCategory.DoesNotExist:
+            pass
+
+    if not authorized:
+        return HttpResponseForbidden("Unauthorized. You do not have permission to view files attached to this ticket.")
+
+    file_disk_path = os.path.normpath(os.path.join(settings.MEDIA_ROOT, db_file_path))
+    if not os.path.exists(file_disk_path):
+        raise Http404("File does not exist on disk storage.")
+
+    if settings.DEBUG:
+        return FileResponse(open(file_disk_path, 'rb'))
+
+    response = HttpResponse(status=200)
+    response['Content-Type'] = ''
+    response['X-Accel-Redirect'] = os.path.join('/protected_media', db_file_path)
+    return response
+
+
+def parse_user_agent(ua_string):
+    if not ua_string:
+        return "Internal"
+    ua_string = ua_string.lower()
+    
+    if "windows" in ua_string:
+        os_name = "Win11" if "nt 10.0" in ua_string else "Win10" if "nt 6.2" in ua_string else "Windows"
+    elif "macintosh" in ua_string or "mac os x" in ua_string:
+        os_name = "macOS"
+    elif "iphone" in ua_string or "ipad" in ua_string:
+        os_name = "iOS"
+    elif "android" in ua_string:
+        os_name = "Android"
+    elif "linux" in ua_string:
+        os_name = "Linux"
+    else:
+        os_name = "Other"
+
+    if "chrome" in ua_string and "safari" in ua_string:
+        browser_name = "Chrome"
+    elif "safari" in ua_string and "chrome" not in ua_string:
+        browser_name = "Safari"
+    elif "firefox" in ua_string:
+        browser_name = "Firefox"
+    elif "edge" in ua_string or "edg" in ua_string:
+        browser_name = "Edge"
+    else:
+        browser_name = "WebBrowser"
+
+    return f"{os_name} · {browser_name}"
+
+def log_system_action(request, action_text, category, ticket=None, severity="Info"):
+    actor = request.user if request and request.user and request.user.is_authenticated else None
+    
+    ip = "—"
+    if request:
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip = request.META.get('REMOTE_ADDR', '—')
+
+    ua_string = request.META.get('HTTP_USER_AGENT', '') if request else ""
+    device = parse_user_agent(ua_string)
+
+    actor_name = "System"
+    email = "system@dash-mfb.com"
+    if actor:
+        actor_name = f"{actor.first_name} {actor.last_name}".strip() or actor.email.split('@')[0]
+        email = actor.email
+
+    SystemAuditLog.objects.create(
+        actor=actor,
+        actor_name_cache=actor_name,
+        email_cache=email,
+        action=action_text,
+        category=category,
+        ticket=ticket,
+        ip_address=ip,
+        device_meta=device,
+        severity=severity
+    )
+
+class SystemAuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = SystemAuditLogSerializer
+    permission_classes = [permissions.IsAuthenticated, IsSystemAdmin]
+
+    def get_queryset(self):
+        queryset = SystemAuditLog.objects.all()
+        category = self.request.query_params.get('category')
+        if category and category != 'All':
+            queryset = queryset.filter(category=category)
+        return queryset

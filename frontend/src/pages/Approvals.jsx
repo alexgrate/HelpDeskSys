@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  ShieldCheck, Check, X, Clock, Building, User, Banknote, AlertTriangle, FileText, MessageSquare, ChevronRight, ArrowLeft
-} from "lucide-react";
+import { ShieldCheck, Check, X, Clock, Building, User, Banknote, AlertTriangle, FileText, MessageSquare, ChevronRight, ArrowLeft, AlertCircle } from "lucide-react";
 import { AppShell } from "../components/helpdesk/AppShell";
 import { cn } from "../utils/cn";
 import { apiFetch } from "../utils/apiFetch";
@@ -55,8 +53,8 @@ export default function ApprovalsPage() {
     setDecideError("");
     setSuccessMsg("");
 
-    if (verdict === "Rejected" && !comment.trim()) {
-      setDecideError("A justification comment is required when rejecting.");
+    if ((verdict === "Rejected" || verdict === "Returned") && !comment.trim()) {
+      setDecideError("A justification comment is required when rejecting or requesting updates [2].");
       return;
     }
 
@@ -298,9 +296,13 @@ export default function ApprovalsPage() {
 
                     {selected.status === "Pending" && (
                       <div className="p-4 border-t border-slate-200 flex flex-wrap items-center gap-2 justify-end bg-slate-50/50 rounded-b-2xl">
-                        <button className="px-3 h-9 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-800 hover:bg-slate-100 cursor-pointer">
-                          Request Info
-                        </button>
+                        <motion.button
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => decide("Returned")}
+                          className="px-3.5 h-9 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <AlertCircle className="size-3.5" /> Request Info
+                        </motion.button>
                         <motion.button
                           whileTap={{ scale: 0.97 }}
                           onClick={() => decide("Rejected")}

@@ -1,61 +1,69 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { apiFetch } from "../../utils/apiFetch";
 
-const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
+const INACTIVITY_TIMEOUT = 15 * 60 * 1000; 
 
 export function InactivityGuard({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const timeoutRef = useRef(null);
+  const checkIntervalRef = useRef(null);
 
-  const handleAutoLogout = () => {
-    // 1. Clear session credentials
+  const handleAutoLogout = useCallback(async () => {
+    const token = localStorage.getItem("access_token");
+
+    if (token) {
+      apiFetch("/users/me/", {
+        method: "PATCH",
+        body: JSON.stringify({ is_on_duty: false }),
+      }).catch((err) => {
+        console.warn("Failed to set off-duty status during auto-logout:", err);
+      });
+    }
+
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     localStorage.removeItem("user");
+    sessionStorage.removeItem("last_activity");
+    localStorage.removeItem("global_last_activity");
     
-    // 2. Safely redirect to login screen
     if (location.pathname !== "/login") {
       navigate("/login");
     }
-  };
+  }, [location.pathname, navigate]);
 
-  const resetTimer = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    // Set countdown for auto logout
-    timeoutRef.current = setTimeout(handleAutoLogout, INACTIVITY_TIMEOUT);
-  };
+  const recordActivity = useCallback(() => {
+    localStorage.setItem("global_last_activity", Date.now().toString());
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
-    
-    // Only monitor inactivity if a session is actively logged in
-    if (!token) {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      return;
-    }
+    if (!token) return;
 
-    // Capture standard user interactions
+    recordActivity();
+
     const events = ["mousedown", "mousemove", "keypress", "scroll", "touchstart"];
-
-    // Initialize timer
-    resetTimer();
-
-    // Bind event listeners globally
     events.forEach((event) => {
-      window.addEventListener(event, resetTimer);
+      window.addEventListener(event, recordActivity);
     });
 
-    // Cleanup listeners and timers on unmount or route transition
+    checkIntervalRef.current = setInterval(() => {
+      const lastActivity = localStorage.getItem("global_last_activity");
+      if (lastActivity) {
+        const elapsed = Date.now() - parseInt(lastActivity, 10);
+        if (elapsed >= INACTIVITY_TIMEOUT) {
+          handleAutoLogout();
+        }
+      }
+    }, 5000);
+
     return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (checkIntervalRef.current) clearInterval(checkIntervalRef.current);
       events.forEach((event) => {
-        window.removeEventListener(event, resetTimer);
+        window.removeEventListener(event, recordActivity);
       });
     };
-  }, [location.pathname]);
+  }, [location.pathname, recordActivity, handleAutoLogout]);
 
   return children;
 }

@@ -1,11 +1,11 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
-from .models import User
+from .models import User  
 
 class CustomUserCreationForm(UserCreationForm):
-    class Meta(UserCreationForm.Meta):
+    class Meta:
         model = User
-        fields = ('email', 'first_name', 'last_name', 'role', 'branch', 'is_on_duty')
+        fields = ('email', 'first_name', 'last_name', 'role', 'branch', 'is_on_duty', 'department')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -26,9 +26,15 @@ class CustomUserCreationForm(UserCreationForm):
             cleaned_data["password2"] = default_pw
             
         return cleaned_data
-class CustomUserChangeForm(UserChangeForm):
-    class Meta(UserChangeForm.Meta):
-        model = User
-        fields = ('email', 'first_name', 'last_name', 'role', 'branch', 'is_on_duty')
-
     
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        if email and not email.endswith('@dash-mfb.com'):
+            raise forms.ValidationError("Email must end with @dash-mfb.com")
+        return email
+
+
+class CustomUserChangeForm(UserChangeForm):
+    class Meta:
+        model = User
+        fields = ('email', 'first_name', 'last_name', 'role', 'branch', 'is_on_duty', 'department')

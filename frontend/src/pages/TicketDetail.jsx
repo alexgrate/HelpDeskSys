@@ -1,15 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  ArrowLeft, UserPlus, ArrowUpRightFromSquare, ShieldCheck, ChevronDown,
-  Paperclip, Send, MessageSquare, Building2, Calendar, Tag,
-  Clock, CheckCircle2, Circle, Loader2, FileText, Activity, Bot,
-  AlertTriangle, User as UserIcon, MoreHorizontal,
-} from "lucide-react";
+import { ArrowLeft, UserPlus, ArrowUpRightFromSquare, ShieldCheck, ChevronDown, Paperclip, Send, MessageSquare, Building2, Calendar, Tag, Clock, CheckCircle2, Circle, Loader2, FileText, Activity, Bot, AlertTriangle, User as UserIcon, MoreHorizontal, AlertCircle } from "lucide-react";
 import { cn } from "../utils/cn";
 import { apiFetch } from "../utils/apiFetch";
 import { getSlaMetrics } from "../utils/sla";
+
 
 export default function TicketDetail() {
   const { id } = useParams(); 
@@ -22,6 +18,38 @@ export default function TicketDetail() {
   const [composerText, setComposerText] = useState("");
   const [postingComment, setPostingComment] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [resubmitText, setResubmitText] = useState("")
+  const [isResubmitting, setIsResubmitting] = useState(false)
+  const [resubmitFiles, setResubmitFiles] = useState([])
+
+  const handleResubmit = async () => {
+    if (!resubmitText.trim()) return;
+    setIsResubmitting(true)
+    try {
+      const formData = new FormData();
+      formData.append("description", resubmitText);
+      formData.append("status", "Pending Approval"); 
+
+      resubmitFiles.forEach((file) => {
+        formData.append("uploaded_files", file);
+      });
+
+      const response = await apiFetch(`/tickets/${id}/`, {
+        method: "PATCH",
+        body: formData
+      })
+      if (response.ok) {
+        const updatedTicket = await response.json()
+        setTicket(updatedTicket)
+        setResubmitFiles([])
+        refreshTimeline()
+      }
+    } catch (err) {
+      console.error("Failed to resubmit ticket:", err)
+    } finally {
+      setIsResubmitting(false)
+    }
+  }
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -30,6 +58,7 @@ export default function TicketDetail() {
     }
 
     const fetchTicketDetails = async () => {
+    
       try {
         const ticketRes = await apiFetch(`/tickets/${id}/`);
         if (!ticketRes.ok) {
@@ -42,6 +71,10 @@ export default function TicketDetail() {
         
         const data = await ticketRes.json();
         setTicket(data);
+
+        if (data.description) {
+          setResubmitText(data.description)
+        }
         
         const commentsRes = await apiFetch(`/tickets/${id}/comments/`);
         if (commentsRes.ok) {
@@ -54,7 +87,7 @@ export default function TicketDetail() {
                 role: c.author_email ? c.author_email.split('@')[0] : "System",
                 initials: c.author_name ? c.author_name.slice(0, 2).toUpperCase() : "SC",
                 time: new Date(c.created_at).toLocaleString([], { 
-                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                  hour: '2-digit', minute: '2-digit' 
                 }),
                 body: c.body
             }));
@@ -95,7 +128,7 @@ export default function TicketDetail() {
     try {
       const response = await apiFetch(`/tickets/${id}/`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Pending Manager Approval" })
+        body: JSON.stringify({ status: "Pending Approval" })
       });
       if (response.ok) {
         const updatedTicket = await response.json();
@@ -192,6 +225,9 @@ export default function TicketDetail() {
   }
 
   const isStaff = currentUser?.role === "Staff";
+  const isAdmin = currentUser?.role === "Admin";
+
+  const isForeignDepartment = !isStaff && !isAdmin && currentUser?.department_name !== ticket?.category_department
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 text-left font-sans">
@@ -200,8 +236,19 @@ export default function TicketDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
           <div className="lg:col-span-7 space-y-6 min-w-0">
             <TicketHeader ticket={ticket} />
+
+            {isForeignDepartment && (
+              <div className="p-4 bg-slate-100 border border-slate-200 rounded-2xl flex items-start gap-3 shadow-sm text-left">
+                <AlertTriangle className="size-5 text-slate-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Global Archive Mode</h4>
+                  <p className="text-[11px] text-slate-500 font-semibold leading-relaxed mt-0.5">
+                    This ticket is assigned to the <span className="font-black">{ticket.category_department || "another"}</span> department. You are viewing this record in read-only mode [1].
+                  </p>
+                </div>
+              </div>
+            )}
             
-            {/* FIXED: Warn message if the ticket has been claimed by another operator [4] */}
             {ticket.assignee && ticket.assignee !== currentUser?.id && (
               <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-3 shadow-sm">
                 <UserIcon className="size-5 text-blue-500 shrink-0 mt-0.5" />
@@ -215,7 +262,7 @@ export default function TicketDetail() {
             )}
 
             {/* Render the Action bar (Hidden for Staff Requesters) */}
-            {!isStaff && (
+            {!isStaff && !isForeignDepartment && (
               <ActionBar 
                 ticket={ticket} 
                 currentUser={currentUser}
@@ -227,6 +274,67 @@ export default function TicketDetail() {
                 }}
               />
             )}
+
+            {ticket.status === "Returned for Update" && isStaff && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-rose-50/50 border border-rose-200 rounded-2xl p-5 md:p-6 text-left relative overflow-hidden shadow-sm"
+              >
+                <div className="absolute inset-y-0 left-0 w-1.5 bg-rose-500" />
+                <div className="pl-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-rose-800">
+                    <AlertCircle className="size-4 text-rose-600 animate-pulse" />
+                    <span>TICKET RETURNED FOR CORRECTION</span>
+                  </div>
+
+                  <h3 className="text-sm font-black text-slate-900 mt-1.5">Action Required: Update Details</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">A department manager has requested corrections before this ticket can be approved. Please review their comments in the timeline below, update your details, and resubmit [2].</p>
+
+                  <div className="mt-4">
+                    <textarea
+                      value={resubmitText}
+                      onChange={(e) => setResubmitText(e.target.value)}
+                      disabled={isResubmitting}
+                      rows={3}
+                      placeholder="Type your detailed corrections, updated descriptions, or response to the HOD here..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 focus:border-blue-500 outline-none resize-none text-xs font-semibold transition shadow-sm"
+                    />
+                  </div>
+
+                  <div className="mt-3 text-left">
+                    <label className="block text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1.5">
+                      Upload Additional Evidence (Optional - Appends to previous files) [1]
+                    </label>
+
+                    <input 
+                      type="file" 
+                      multiple 
+                      onChange={(e) => setResubmitFiles(Array.from(e.target.files))}
+                      className="text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100 cursor-pointer"
+                    />
+
+                    {resubmitFiles.length > 0 && (
+                      <div className="mt-1.5 text-[10px] text-slate-500 font-bold">
+                        {resubmitFiles.length} new file(s) selected
+                      </div>
+                    )}
+
+                  </div>
+
+                   <div className="mt-4 flex justify-end">
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={handleResubmit}
+                      disabled={isResubmitting || !resubmitText.trim()}
+                      className="h-9 px-4 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-55 cursor-pointer shadow-md"
+                    >
+                      {isResubmitting ? <Loader2 className="size-3.5 animate-spin" /> : <><Send className="size-3.5" /> Resubmit Ticket</>}
+                    </motion.button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
             
             <Workspace 
               text={composerText} 
@@ -237,8 +345,8 @@ export default function TicketDetail() {
             />
           </div>
           <aside className="lg:col-span-3 space-y-6 min-w-0">
-            <SlaWidget createdAt={ticket.created_at} priority={ticket.priority} status={ticket.status} />
-            <ApprovalTracker status={ticket.status} />
+            <SlaWidget createdAt={ticket.created_at} priority={ticket.priority} status={ticket.status} resolvedAt={ticket.updated_at} />
+            <ApprovalTracker status={ticket.status} approvalSequence={ticket.approval_sequence} activeApprovalStep={ticket.active_approval_step} />
             <AuditLog ticket={ticket} />
           </aside>
         </div>
@@ -281,7 +389,7 @@ function TicketHeader({ ticket }) {
 
   const statusColors = {
     "Submitted": "bg-slate-100 text-slate-600 border-slate-200",
-    "Pending Manager Approval": "bg-amber-50 text-amber-700 border-amber-200",
+    "Pending Approval": "bg-amber-50 text-amber-700 border-amber-200",
     "In Progress": "bg-indigo-50 text-indigo-700 border-indigo-200",
     "Resolved": "bg-emerald-50 text-emerald-700 border-emerald-200",
     "Closed": "bg-slate-100 text-slate-600 border-slate-200",
@@ -302,7 +410,11 @@ function TicketHeader({ ticket }) {
         <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md border bg-slate-50 text-slate-600 uppercase">
           {ticket.category}
         </span>
-        <span className={cn("inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md border", statusColors[ticket.status])}>
+        <span className={cn("inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md border", 
+          ticket.status?.startsWith("Pending") 
+            ? "bg-amber-50 text-amber-700 border-amber-200" 
+            : (statusColors[ticket.status] || "bg-slate-100 text-slate-600 border-slate-200")
+        )}>
           {ticket.status}
         </span>
       </div>
@@ -315,6 +427,13 @@ function TicketHeader({ ticket }) {
         <Meta icon={UserIcon} label="Requester" value={ticket.submitted_by_email.split("@")[0]} sub={ticket.branch || "Branch Operations"} />
         <Meta icon={Tag} label="Classified Category" value={ticket.problem_type} sub="Automatic Classification" />
         <Meta icon={Calendar} label="Date Submitted" value={new Date(ticket.created_at).toLocaleDateString()} sub={new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} />
+      </div>
+
+      <div className="mt-5 pt-4 border-t border-slate-100 text-left">
+        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-2">Detailed Description</div>
+        <div className="text-xs font-semibold text-slate-600 leading-relaxed whitespace-pre-wrap">
+          {ticket.description}
+        </div>
       </div>
 
       {ticket.attachments && ticket.attachments.length > 0 && (
@@ -343,6 +462,8 @@ function TicketHeader({ ticket }) {
   );
 }
 
+
+
 function Meta({ icon: Icon, label, value, sub }) {
   return (
     <div className="flex items-start gap-3">
@@ -366,7 +487,8 @@ function ActionBar({ ticket, currentUser, onResolve, onRequestOverride, onTicket
   const isUnassigned = !ticket.assignee;
 
   const isResolvedOrClosed = ticket.status === "Resolved" || ticket.status === "Closed";
-  const isPendingApproval = ticket.status === "Pending Manager Approval";
+  const isPendingApproval = ticket.status === "Pending Approval"
+
 
   if (isResolvedOrClosed || isPendingApproval) {
     return null
@@ -601,20 +723,37 @@ function ConversationTimeline({ comments }) {
 
 /* ─────────────── Right Panel: Widgets ─────────────── */
 
-function SlaWidget({ createdAt, priority, status, updatedAt }) {
-  const sla = getSlaMetrics(createdAt, priority, status, updatedAt);
-  const remaining = Math.max(0, sla.remainingMin);
+function SlaWidget({ createdAt, priority, status, resolvedAt }) {
+  const sla = getSlaMetrics(createdAt, priority, status, resolvedAt);
+  const remaining = sla.remainingMin;
   const total = sla.totalMin;
   
   const resolved = status === "Resolved" || status === "Closed";
-  const pct = resolved ? 100 : ((total - remaining) / total) * 100;
+  const breached = remaining < 0;
+
+  const elapsedMin = total - remaining
+
+  const formatSlaValue = (min) => {
+    const abs = Math.abs(min)
+    const h = Math.floor(abs / 60)
+    const m = abs % 60
+    const sign = min < 0 ? "-" : ""
+    if (h > 0) return `${sign}${h}h ${m}m`
+    return `${sign}${m}m`
+  }
+
+  const remainingForCirle = Math.max(0, remaining)
+  const pct = resolved ? 100 : ((total - remainingForCirle) / total) * 100;
   
   const r = 42;
   const c = 2 * Math.PI * r;
   const offset = resolved ? 0 : c - (pct / 100) * c;
 
-  const tone = remaining < 20 && !resolved ? "stroke-rose-500" : remaining < 45 && !resolved ? "stroke-amber-500" : "stroke-emerald-500";
-  const toneText = remaining < 20 && !resolved ? "text-rose-500 font-bold" : remaining < 45 && !resolved ? "text-amber-500 font-bold" : "text-emerald-500 font-bold";
+  const isAtRisk = remaining < 45 && !resolved
+  const isBreached = breached
+
+  const tone = isBreached ? "stroke-rose-500" : isAtRisk ? "stroke-amber-500" : "stroke-emerald-500";
+  const toneText = isBreached ? "text-rose-500 font-bold" : isAtRisk ? "text-amber-500 font-bold" : "text-emerald-500 font-bold";
 
   return (
     <motion.div
@@ -626,11 +765,12 @@ function SlaWidget({ createdAt, priority, status, updatedAt }) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xs font-bold text-slate-900 tracking-tight">SLA Progress</h3>
         <span className={cn("text-[10px] font-bold inline-flex items-center gap-1 px-2 py-0.5 rounded-md border",
-          resolved ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-          remaining < 45 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-100"
+          resolved ? (breached ? "bg-rose-50 text-rose-700 border-rose-100 animate-pulse" : "bg-emerald-50 text-emerald-700 border-emerald-100") :
+          isBreached ? "bg-rose-50 text-rose-700 border-rose-100 animate-pulse":
+          isAtRisk ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-100"
         )}>
           <Clock className="size-3" />
-          {resolved ? "Met" : remaining < 45 ? "At Risk" : "On Track"}
+          {resolved ? (breached ? "Breached" : "Met") : isBreached ? "Breached" : isAtRisk ? "At Risk" : "On Track"}
         </span>
       </div>
 
@@ -653,10 +793,11 @@ function SlaWidget({ createdAt, priority, status, updatedAt }) {
         <div className="absolute inset-0 grid place-items-center text-center">
           <div>
             <div className={cn("text-3xl font-black tabular-nums leading-none", toneText)}>
-              {resolved ? "0m" : `${remaining}m`}
+
+              {resolved ? formatSlaValue(elapsedMin) : formatSlaValue(remaining)}
             </div>
             <div className="text-[9px] text-slate-400 font-bold uppercase mt-1">
-              {resolved ? "Closed out" : "remaining"}
+              {resolved ? "elapsed" : breached ? "overdue" : "remaining"}
             </div>
           </div>
         </div>
@@ -664,10 +805,22 @@ function SlaWidget({ createdAt, priority, status, updatedAt }) {
 
       <div className="mt-2 text-[11px] text-center text-slate-400 font-medium">
         {resolved ? (
-          <span className="font-bold text-emerald-600">SLA successfully met on resolved ticket.</span>
+          breached ?(
+          <span className="font-bold text-rose-600">
+            SLA Breached. {status === "Closed" ? "ClOsed ? Rejected" : "Resolved"} in {formatSlaValue(elapsedMin)}.
+          </span>
+        ) : (
+          <span className="font-bold text-emerald-600">
+            {status === "Closed" ? "Closed within SLA target" : "SLA successfully met. Resolved"} in {formatSlaValue(elapsedMin)}
+          </span>
+          )
+        ) : breached ? (
+          <span className="text-rose-600 font-bold">
+            SLA breached by {formatSlaValue(remaining).replace("-", "")} on a {(total / 60).toFixed(0)}-hour limit.
+          </span>
         ) : (
           <>
-            <span className="font-bold text-slate-700">{remaining}</span> minutes remaining of a{" "}
+            <span className="font-bold text-slate-700">{formatSlaValue(remaining)}</span> remaining of a{" "}
             <span className="font-bold text-slate-700 font-mono">{(total / 60).toFixed(0)}-hour</span> limit.
           </>
         )}
@@ -676,24 +829,43 @@ function SlaWidget({ createdAt, priority, status, updatedAt }) {
   );
 }
 
-function ApprovalTracker({ status }) {
+function ApprovalTracker({ status, approvalSequence = [], activeApprovalStep }) {
   const steps = [
-    { label: "Ticket Created", state: "done" },
-    { 
-      label: "Pending Approvals", 
-      state: status === "Pending Manager Approval" ? "active" : 
-             status === "Submitted" ? "pending" : "done" 
-    },
-    { 
-      label: "Operator Processing", 
-      state: status === "In Progress" ? "active" : 
-             status === "Submitted" || status === "Pending Manager Approval" ? "pending" : "done" 
-    },
-    { 
-      label: "Resolution", 
-      state: status === "Resolved" || status === "Closed" ? "done" : "pending" 
-    },
+    { label: "Ticket Created", state: "done" }
   ];
+
+  const isPendingApproval = status?.startsWith("Pending") && status?.includes("Approval")
+
+  approvalSequence.forEach((role, idx) => {
+    const stepNumber = idx + 1;
+    let stepState = "pending";
+
+    if (isPendingApproval) {
+      if (activeApprovalStep === stepNumber) {
+        stepState = "active";
+      } else if (activeApprovalStep > stepNumber) {
+        stepState = "done";
+      }
+    } else if (status === "In Progress" || status === "Resolved" || status === "Closed") {
+      stepState = "done"; 
+    }
+
+    steps.push({
+      label: `${role} Approval`,
+      state: stepState
+    });
+  });
+
+  steps.push({
+    label: "Operator Processing",
+    state: status === "In Progress" ? "active" : 
+           status === "Resolved" || status === "Closed" ? "done" : "pending"
+  });
+
+  steps.push({
+    label: "Resolution",
+    state: status === "Resolved" || status === "Closed" ? "done" : "pending"
+  });
 
   return (
     <motion.div

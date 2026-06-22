@@ -1,10 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Building2, LayoutDashboard, Inbox, BookOpen, ChevronLeft, LifeBuoy, Menu, X } from "lucide-react";
 import { Topbar } from "./Topbar";
 
-// Separated target paths to resolve double highlights
 const NAV = [
   { label: "Dashboard", icon: LayoutDashboard, to: "/staff-portal" },
   { label: "My Requests", icon: Inbox, to: "/staff-portal/requests" },
@@ -14,7 +13,15 @@ const NAV = [
 export function StaffShell({ children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
   const location = useLocation();
+  const mainRef = useRef(null)
+
+  useEffect(() => {
+    if (mainRef.current) {
+      mainRef.current.scrollTo(0, 0)
+    }
+  }, [location.pathname])
 
   const sidebarContent = (isMobile = false) => (
     <div className="flex flex-col h-full bg-[#1A2332] text-slate-200">
@@ -81,7 +88,7 @@ export function StaffShell({ children }) {
   );
 
   return (
-    <div className="min-h-screen flex bg-slate-50 text-slate-950">
+    <div className="h-screen flex overflow-hidden bg-slate-50 text-slate-950">
       <AnimatePresence>
         {mobileOpen && (
           <div className="fixed inset-0 z-50 md:hidden flex">
@@ -114,9 +121,9 @@ export function StaffShell({ children }) {
         {sidebarContent(false)}
       </motion.aside>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
         <Topbar onMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] w-full mx-auto overflow-y-auto">
+        <main ref={mainRef} className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] w-full mx-auto overflow-y-auto">
           {children}
         </main>
       </div>

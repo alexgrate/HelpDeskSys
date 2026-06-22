@@ -1,19 +1,11 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "../components/helpdesk/AppShell";
 import { MetricCards } from "../components/helpdesk/MetricCards";
 import { TicketTable } from "../components/helpdesk/TicketTable";
 import { apiFetch } from "../utils/apiFetch";
+import { API_BASE_URL } from "../utils/apiFetch";
 
-const getApiBaseUrl = () => {
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (isLocal) {
-    return "http://127.0.0.1:8000/api";
-  }
-  return "https://helpdesksys.onrender.com/api"; 
-};
-
-const API_BASE_URL = getApiBaseUrl();
 
 export default function Dashboard() {
   const [tickets, setTickets] = useState([]);
@@ -83,6 +75,7 @@ export default function Dashboard() {
           tickets={tickets}
           isLoading={isLoading}
           error={error}
+          currentUser={user}
           onTicketUpdate={(updated) =>
             setTickets(prev => prev.map(t => t.id === updated.id ? updated : t))
           }

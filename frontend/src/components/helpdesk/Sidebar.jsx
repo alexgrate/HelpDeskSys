@@ -1,60 +1,67 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Building2,
-  LayoutDashboard,
-  Inbox,
-  ShieldAlert,
-  BarChart3,
-  BookOpen,
-  FolderTree,
-  FileCheck,
-  Wrench,
-  X
-} from "lucide-react";
+import { Building2, LayoutDashboard, Inbox, ShieldAlert, BarChart3, BookOpen, FolderTree, FileCheck, Wrench, X } from "lucide-react";
+import { apiFetch } from "../../utils/apiFetch";
 
 
-// 1. Configured custom operational role-access parameters
 const NAV_ITEMS = [
-  { label: "Dashboard", icon: LayoutDashboard, to: "/", allowedRoles: ["Agent", "Manager", "Admin"] },
-  { label: "My Tickets", icon: Inbox, to: "/my-tickets", allowedRoles: ["Agent", "Manager", "Admin"] },
-  { label: "Approvals", icon: ShieldAlert, to: "/approvals", allowedRoles: ["Manager"] }, // Strictly Managers
-  { label: "Reports", icon: BarChart3, to: "/reports", allowedRoles: ["Manager", "Admin"] },
-  { label: "Knowledge Base", icon: BookOpen, to: "/kb", allowedRoles: ["Agent", "Manager", "Admin"] },
-  { label: "Department Queues", icon: FolderTree, to: "/queues", allowedRoles: ["Agent", "Manager", "Admin"] },
-  { label: "Audit Logs", icon: FileCheck, to: "/audit-logs", allowedRoles: ["Manager", "Admin"] },
-  { label: "Admin", icon: Wrench, to: "/admin", allowedRoles: ["Admin"] }, // Strictly Admins
+  { label: "Dashboard", icon: LayoutDashboard, to: "/", allowedRoles: ["Agent", "Approver", "Admin"] },
+  { label: "Approvals", icon: ShieldAlert, to: "/approvals", allowedRoles: ["Approver"] }, 
+  { label: "Reports", icon: BarChart3, to: "/reports", allowedRoles: ["Approver", "Admin"] },
+  { label: "Knowledge Base", icon: BookOpen, to: "/kb", allowedRoles: ["Agent", "Approver", "Admin"] },
+  { label: "Audit Logs", icon: FileCheck, to: "/audit-logs", allowedRoles: ["Approver", "Admin"] },
+  { label: "Admin", icon: Wrench, to: "/admin", allowedRoles: ["Admin"] },
 ];
 
 const subtitleMap = {
   Agent: "Control Tower",
-  Manager: "Management Desk",
+  Approver: "Management Desk",
   Admin: "Admin Console",
 };
 
 export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
   const location = useLocation();
   const [currentUser, setCurrentUser] = useState(null);
+  const [badgeCounts, setBadgeCounts] = useState({ pending_approvals: 0, my_workload: 0})
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
     if (stored) {
       setCurrentUser(JSON.parse(stored));
     }
-  }, []);
 
-  const userRole = currentUser?.role || "Agent";
-  const subtitle = subtitleMap[userRole] || "Control Tower";
+    const fetchCounts = async () => {
+      try {
+        const res = await apiFetch("/tickets/badge_analytics/")
+        if (res.ok) {
+          setBadgeCounts(await res.json())
+        }
+      } catch (err) {
+        console.warn("Failed to retrieve operational badge counts:", err)
+      }
+    }
+    fetchCounts()
+  }, [])
 
-  // 2. Filter the navigation options dynamically based on the session's role
-  const filteredNavItems = NAV_ITEMS.filter((item) =>
-    item.allowedRoles ? item.allowedRoles.includes(userRole) : true
-  );
+
+  const filteredNavItems = NAV_ITEMS.filter((item) => {
+    if (currentUser?.role === "Admin") return true;
+
+    if (!item.allowedRoles) return true
+
+    return item.allowedRoles.some(role => {
+      if (role === "Staff") return currentUser?.role === "Staff";
+      if (role === "Agent") return currentUser?.is_agent;
+      if (role === "Approver") return currentUser?.can_approve;
+      return false
+    })
+  })
+
+  const subtitle = currentUser?.role === "Admin" ? "Admin Console" : currentUser?.can_approve ? "Management Desk" : currentUser?.is_agent ? "Control Tower" : "Staff Portal";
 
   const sidebarContent = (isMobile = false) => (
     <div className="flex flex-col h-full bg-[#0B1329] text-slate-200 text-left font-sans">
-      {/* Title Header */}
       <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-800">
         <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-500 grid place-items-center shrink-0">
           <Building2 className="h-5 w-5 text-white" />
@@ -62,7 +69,6 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
         {(!collapsed || isMobile) && (
           <div className="text-left overflow-hidden">
             <div className="text-xs font-black text-white tracking-wide leading-tight">Dash MFB</div>
-            {/* Dynamic subtitle matching the active role context */}
             <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">{subtitle}</div>
           </div>
         )}
@@ -73,11 +79,14 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
         )}
       </div>
 
-      {/* Nav Section */}
       <nav className="flex-1 px-2.5 py-4 space-y-1 overflow-y-auto">
         {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const active = location.pathname === item.to;
+
+          const showApprovalBadge = item.label === "Approvals" && badgeCounts.pending_approvals > 0;
+          const showWorkloadBadge = (item.label === "My Tickets" || item.label === "My Requests") && badgeCounts.my_workload > 0;
+
           return (
             <Link
               key={item.label}
@@ -97,6 +106,21 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
               )}
               <Icon className="size-[16px] shrink-0" />
               {(!collapsed || isMobile) && <span className="flex-1 text-left">{item.label}</span>}
+
+              {(!collapsed || isMobile) && (
+                <>
+                  {showApprovalBadge && (
+                    <span className="size-4 rounded-full bg-rose-500 text-white text-[9px] font-black grid place-items-center shrink-0 tabular-nums animate-pulse shadow-sm">
+                      {badgeCounts.pending_approvals}
+                    </span>
+                  )}
+                  {showWorkloadBadge && (
+                    <span className="size-4 rounded-full bg-[#4D1D6F] text-white text-[9px] font-black grid place-items-center shrink-0 tabular-nums shadow-sm">
+                      {badgeCounts.my_workload}
+                    </span>
+                  )}
+                </>
+              )}
             </Link>
           );
         })}
@@ -106,11 +130,9 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
 
   return (
     <>
-      {/* Mobile overlay menu */}
       <AnimatePresence>
         {mobileOpen && (
           <div className="fixed inset-0 z-50 md:hidden flex">
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.5 }}
@@ -118,7 +140,6 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
               onClick={onMobileClose}
               className="absolute inset-0 bg-black"
             />
-            {/* Drawer */}
             <motion.aside
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
@@ -132,7 +153,6 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
         )}
       </AnimatePresence>
 
-      {/* Desktop sidebar */}
       <motion.aside
         initial={false}
         animate={{ width: collapsed ? 68 : 240 }}
@@ -141,7 +161,6 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
       >
         {sidebarContent(false)}
 
-        {/* Collapse toggle footer button */}
         <div className="p-3 border-t border-slate-800">
           <button
             onClick={onToggle}

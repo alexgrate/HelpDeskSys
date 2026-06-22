@@ -1,71 +1,62 @@
+// src/pages/NewTicket.jsx
+
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
-import {
-  ArrowLeft, ArrowRight, Check, Monitor, Banknote, CreditCard, Wrench, Users,
-  ShieldAlert, ChevronDown, Upload, X, FileText, AlertCircle, Send, Sparkles,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Monitor, Banknote, CreditCard, Wrench, Users, ShieldAlert, ChevronDown, Upload, X, FileText, AlertCircle, Send, Sparkles, Loader2, ShoppingBag, Scale, Key, Database, HelpCircle, Activity, UserCog, Laptop } from "lucide-react";
 import { cn } from "../utils/cn";
 import { apiFetch } from "../utils/apiFetch";
 
-const getApiBaseUrl = () => {
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (isLocal) {
-    return "http://127.0.0.1:8000/api";
-  }
-  return "https://helpdesksys.onrender.com/api"; 
-};
 
-const API_BASE_URL = getApiBaseUrl();
+const ICON_MAP = {
+  Monitor: Monitor,
+  Banknote: Banknote,
+  CreditCard: CreditCard,
+  Wrench: Wrench,
+  Users: Users,
+  ShieldAlert: ShieldAlert,
+  ShoppingBag: ShoppingBag,
+  Scale: Scale,
+  Key: Key,
+  Database: Database,
+  HelpCircle: HelpCircle,
+  Activity: Activity,
+  UserCog: UserCog, 
+  Laptop: Laptop
+}
 
-/* ─────────────── Catalog configuration ─────────────── */
+const ACCENT_MAP = {
+  it: "from-blue-400/15 to-blue-400/0 text-blue-600",  
+  core: "from-violet-500/15 to-violet-500/0 text-violet-600",
+  cards: "from-rose-500/15 to-rose-500/0 text-rose-600",
+  facilities: "from-amber-500/15 to-amber-500/0 text-amber-600",
+  hr: "from-emerald-500/15 to-emerald-500/0 text-emerald-600",
+  compliance: "from-indigo-500/15 to-indigo-500/0 text-indigo-600",
+  procurement: "from-sky-500/15 to-sky-500/0 text-sky-600",
+  legal: "from-slate-500/15 to-slate-500/0 text-slate-600",
+  security: "from-red-500/15 to-red-500/0 text-red-600",
+  general: "from-teal-500/15 to-teal-500/0 text-teal-600",
+}
 
-const CATEGORIES = [
-  { key: "it", label: "IT Support", team: "IT Helpdesk", icon: Monitor, accent: "from-sky-500/15 to-sky-500/0 text-sky-600",
-    desc: "Workstations, VPN, password resets",
-    problems: ["Password reset", "VPN not connecting", "Workstation issue", "Email / Outlook", "Software install request"] },
-  { key: "core", label: "Core Banking", team: "Core Banking Ops", icon: Banknote, accent: "from-violet-500/15 to-violet-500/0 text-violet-600",
-    desc: "Transfers, reversals, account access",
-    problems: ["Failed transfer / NIP", "Reversal request", "Account access issue", "Statement / balance dispute", "Standing order setup"] },
-  { key: "cards", label: "Cards Team", team: "Cards Operations", icon: CreditCard, accent: "from-rose-500/15 to-rose-500/0 text-rose-600",
-    desc: "ATM malfunction, activation, POS",
-    problems: ["ATM dispense failure", "Card activation", "POS dispute / chargeback", "Card hot-listing", "PIN reset"] },
-  { key: "facilities", label: "Facilities", team: "Facilities Mgmt", icon: Wrench, accent: "from-amber-500/15 to-amber-500/0 text-amber-600",
-    desc: "AC, generator, internet, printers",
-    problems: ["AC not cooling", "Generator failure", "Internet / link down", "Printer issue", "Plumbing / electrical"] },
-  { key: "hr", label: "Human Resources", team: "HR Services", icon: Users, accent: "from-emerald-500/15 to-emerald-500/0 text-emerald-600",
-    desc: "Payroll, leave, ID card",
-    problems: ["Payroll discrepancy", "Leave request", "ID card replacement", "Benefits enquiry", "Letter request"] },
-  { key: "compliance", label: "Compliance / Risk", team: "Compliance", icon: ShieldAlert, accent: "from-indigo-500/15 to-indigo-500/0 text-indigo-600",
-    desc: "SAR, policy check, sanctions",
-    problems: ["Suspicious Activity Report (SAR)", "Policy clarification", "Sanctions screening match", "KYC escalation", "Audit query"] },
-];
-
-/* ─────────────── Zod Validation Schemas ─────────────── */
 
 const Step1 = z.object({
-  category: z.enum(["it", "core", "cards", "facilities", "hr", "compliance"], {
-    message: "Pick a category to continue",
-  }),
+  category: z.string().min(1, "Pick a category to continue"),
   problemType: z.string().trim().min(1, "Select a problem type"),
 });
 
-const Step2Base = z.object({
+// A single, unified, loosely validated validation schema [1]
+const Step2 = z.object({
   summary: z.string().trim().min(8, "Summary must be at least 8 characters").max(120, "Keep it under 120 characters"),
   description: z.string().trim().min(20, "Add at least 20 characters of detail").max(2000, "Too long (max 2000)"),
   impact: z.enum(["single", "team", "branch"], { message: "Select impact level" }),
-});
-
-const Step2Financial = Step2Base.extend({
-  accountOrCard: z.string().trim().regex(/^[0-9*\-\s]{6,24}$/, "Use digits, dashes or *, 6–24 characters"),
-  txnDate: z.string().min(1, "Date required"),
-  txnId: z.string().trim().max(64, "Max 64 characters").optional().or(z.literal("")),
-});
-
-const Step2IT = Step2Base.extend({
-  assetTag: z.string().trim().regex(/^[A-Za-z0-9\-]{3,20}$/, "Alphanumerics & dashes, 3–20 characters"),
-  errorCode: z.string().trim().max(64, "Max 64 characters").optional().or(z.literal("")),
+  
+  // Auxiliary reference fields are unified and optional
+  accountOrCard: z.string().trim().optional().or(z.literal("")),
+  txnDate: z.string().optional().or(z.literal("")),
+  txnId: z.string().trim().optional().or(z.literal("")),
+  assetTag: z.string().trim().optional().or(z.literal("")),
+  errorCode: z.string().trim().optional().or(z.literal("")),
 });
 
 const emptyState = {
@@ -91,9 +82,10 @@ export default function NewTicket() {
   const [submitError, setSubmitError] = useState("");
   const [createdTicketId, setCreatedTicketId] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [categories, setCategories] = useState([])
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
   const navigate = useNavigate();
 
-  // Authentication Guard: Ensure user is logged in
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) {
@@ -101,14 +93,31 @@ export default function NewTicket() {
     }
   }, [navigate]);
 
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try{
+        const response = await apiFetch("/categories/")
+        if (response.ok) {
+          const data = await response.json()
+          setCategories(data)
+        } else {
+          setSubmitError("Failed to fetch available support categories.")
+        }
+      } catch (err) {
+        setSubmitError("Network error. Unable to load support categories.")
+      } finally {
+        setCategoriesLoading(false)
+      }
+    }
+    fetchCategories()
+  }, [])
+
   const update = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => ({ ...e, [key]: "" }));
   };
 
-  const cat = useMemo(() => CATEGORIES.find((c) => c.key === form.category), [form.category]);
-  const needsFinancial = form.category === "core" || form.category === "cards";
-  const needsIT = form.category === "it";
+  const cat = useMemo(() => categories.find((c) => c.key === form.category), [form.category, categories]);
 
   const validateStep = (s) => {
     const errs = {};
@@ -117,8 +126,7 @@ export default function NewTicket() {
       if (!r.success) r.error.issues.forEach((i) => (errs[i.path[0]] = i.message));
     }
     if (s === 1) {
-      const schema = needsFinancial ? Step2Financial : needsIT ? Step2IT : Step2Base;
-      const r = schema.safeParse(form);
+      const r = Step2.safeParse(form);
       if (!r.success) r.error.issues.forEach((i) => (errs[i.path[0]] = i.message));
     }
     setErrors(errs);
@@ -128,14 +136,12 @@ export default function NewTicket() {
   const next = () => validateStep(step) && setStep((s) => Math.min(2, s + 1));
   const back = () => setStep((s) => Math.max(0, s - 1));
   
-  // Real Backend API Connection Handler
   const submit = async () => {
     if (!validateStep(1)) return;
 
     setIsLoading(true);
     setSubmitError("");
 
-    // Create a FormData container to safely transport files and string fields
     const formData = new FormData();
     formData.append("category", form.category);
     formData.append("problem_type", form.problemType);
@@ -149,7 +155,6 @@ export default function NewTicket() {
     if (form.assetTag) formData.append("asset_tag", form.assetTag);
     if (form.errorCode) formData.append("error_code", form.errorCode);
 
-    // Append multiple files with the backend's key: "uploaded_files"
     form.files.forEach((file) => {
       formData.append("uploaded_files", file);
     });
@@ -166,7 +171,7 @@ export default function NewTicket() {
         throw new Error(data.detail || "Failed to submit ticket.");
       }
 
-      setCreatedTicketId(data.ticket_id); // Save the database-generated ID
+      setCreatedTicketId(data.ticket_id); 
       setSubmitted(true);
     } catch (err) {
       setSubmitError(err.message || "Something went wrong.");
@@ -175,10 +180,11 @@ export default function NewTicket() {
     }
   };
 
+
   if (submitted) {
     return (
       <SuccessScreen 
-        team={cat?.team ?? "Help Desk"} 
+        team={cat?.team_name ?? "Help Desk"} 
         ticketId={createdTicketId}
         reset={() => { 
           setForm(emptyState); 
@@ -216,14 +222,13 @@ export default function NewTicket() {
                 transition={{ duration: 0.25, ease: "easeOut" }}
                 className="p-5 md:p-7"
               >
-                {step === 0 && <StepCategory form={form} update={update} errors={errors} />}
-                {step === 1 && <StepDetails form={form} update={update} errors={errors} cat={cat} needsFinancial={needsFinancial} needsIT={needsIT} />}
-                {step === 2 && <StepReview form={form} cat={cat} needsFinancial={needsFinancial} needsIT={needsIT} />}
+                {step === 0 && <StepCategory form={form} update={update} errors={errors} categories={categories} loading={categoriesLoading} cat={cat} />}
+                {step === 1 && <StepDetails form={form} update={update} errors={errors} cat={cat} />}
+                {step === 2 && <StepReview form={form} cat={cat} />}
               </motion.div>
             </AnimatePresence>
           </div>
 
-          {/* Render Global Network/Validation errors */}
           {submitError && (
             <div className="mx-5 md:mx-7 mb-4 flex items-start gap-2 text-xs text-rose-600 bg-rose-50 border border-rose-100/50 rounded-xl px-3 py-2.5">
               <AlertCircle className="size-4 shrink-0 mt-0.5 text-rose-500" />
@@ -244,7 +249,8 @@ export default function NewTicket() {
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 onClick={next}
-                className="h-10 px-5 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors cursor-pointer"
+                disabled={categoriesLoading}
+                className="h-10 px-5 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-50"
               >
                 Continue <ArrowRight className="size-4" />
               </motion.button>
@@ -274,12 +280,11 @@ export default function NewTicket() {
 /* ─────────────── Back Strip Link Header ─────────────── */
 
 function TopStrip({ ticketId, category }) {
-  // Read role from session — determines where "back" goes
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
   const isStaff = currentUser?.role === "Staff";
 
   return (
-    <div className="border-b border-slate-200 bg-white/70 backdrop-blur-xl sticky top-0 z-20">
+    <div className="border-b border-slate-200 bg-white/70 backdrop-blur-xl sticky top-0 z-20 text-left">
       <div className="max-w-[1600px] mx-auto px-4 md:px-6 lg:px-8 h-14 flex items-center gap-3">
         <Link
           to={isStaff ? "/staff-portal" : "/"}
@@ -288,10 +293,18 @@ function TopStrip({ ticketId, category }) {
           <ArrowLeft className="size-4" />
           {isStaff ? "Back to portal" : "Back to queue"}
         </Link>
-        <span className="text-slate-300">/</span>
-        <span className="text-xs font-bold text-slate-500 uppercase">{category} Queue</span>
-        <span className="text-slate-300">/</span>
-        <span className="text-xs font-bold font-mono text-slate-800">#{ticketId}</span>
+        {category && (
+          <> 
+            <span className="text-slate-300">/</span>
+            <span className="text-xs font-bold text-slate-500 uppercase">{category} Queue</span>
+          </>
+        )}
+        {ticketId && (
+          <> 
+            <span className="text-slate-300">/</span>
+            <span className="text-xs font-bold font-mono text-slate-800">#{ticketId}</span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -346,46 +359,60 @@ function Stepper({ step }) {
 
 /* ─────────────── Step 1: Category ─────────────── */
 
-function StepCategory({ form, update, errors }) {
-  const cat = CATEGORIES.find((c) => c.key === form.category);
+function StepCategory({ form, update, errors, categories=[], loading, cat }) {
   return (
     <div className="space-y-4">
       <SectionHead title="What's this about?" subtitle="Pick the category that best fits your issue to target the correct queue." />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {CATEGORIES.map((c) => {
-          const Icon = c.icon;
-          const active = form.category === c.key;
-          return (
-            <motion.button
-              key={c.key}
-              type="button"
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => { update("category", c.key); update("problemType", ""); }}
-              className={cn(
-                "group relative text-left p-4 rounded-xl border bg-white transition-colors overflow-hidden cursor-pointer",
-                active ? "border-blue-600 ring-2 ring-blue-500/10" : "border-slate-200 hover:border-slate-300"
-              )}
-            >
-              <div className={cn("absolute inset-0 bg-gradient-to-br opacity-50 pointer-events-none", c.accent)} />
-              <div className="relative flex items-start gap-3">
-                <div className={cn("size-10 rounded-lg grid place-items-center bg-white border border-slate-200 shrink-0", c.accent.split(" ").find(s => s.startsWith("text-")))}>
-                  <Icon className="size-5" />
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="size-8 text-blue-600 animate-spin" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {categories.map((c) => {
+            const Icon = ICON_MAP[c.icon_name] || Monitor;
+            const active = form.category === c.key;
+
+            return (
+              <motion.button
+                key={c.key}
+                type="button"
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => { update("category", c.key); update("problemType", ""); }}
+                className="group relative text-left p-4 rounded-xl border bg-white transition-all overflow-hidden cursor-pointer outline-none"
+                style={{
+                  borderColor: active ? (c.color || '#2563eb') : '#e2e8f0', 
+                  boxShadow: active ? `0 0 0 2px ${(c.color || '#2563eb')}20` : 'none'
+                }}
+              >
+                <div className="absolute inset-0 opacity-40 pointer-events-none" 
+                  style={{
+                    background: `linear-gradient(to bottom right, ${c.color || '#3b82f6'}26, transparent)`
+                  }}
+                />
+                <div className="relative flex items-start gap-3">
+                  <div className="size-10 rounded-lg grid place-items-center bg-white border border-slate-200 shrink-0"
+                    style={{ color: c.color || '#3b82f6' }}>
+                    <Icon className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-800">{c.label}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">{c.description}</div>
+                  </div>
+                  {active && (
+                    <span className="size-5 rounded-full text-white grid place-items-center shrink-0"
+                      style={{ backgroundColor: c.color || '#2563eb' }}>
+                      <Check className="size-3" />
+                    </span>
+                  )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-slate-800">{c.label}</div>
-                  <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">{c.desc}</div>
-                </div>
-                {active && (
-                  <span className="size-5 rounded-full bg-blue-600 text-white grid place-items-center shrink-0">
-                    <Check className="size-3" />
-                  </span>
-                )}
-              </div>
-            </motion.button>
-          );
-        })}
-      </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      )}
       {errors.category && <FieldError msg={errors.category} />}
 
       <AnimatePresence>
@@ -408,7 +435,7 @@ function StepCategory({ form, update, errors }) {
             {errors.problemType && <FieldError msg={errors.problemType} />}
             <div className="mt-3 text-[11px] text-slate-400 inline-flex items-center gap-1.5 font-medium">
               <Sparkles className="size-3.5 text-blue-500" />
-              This will automatically route to the <span className="font-bold text-slate-700">{cat.team}</span>.
+              This will automatically route to the <span className="font-bold text-slate-700">{cat.team_name}</span>.
             </div>
           </motion.div>
         )}
@@ -417,42 +444,15 @@ function StepCategory({ form, update, errors }) {
   );
 }
 
-/* ─────────────── Step 2: Form Details ─────────────── */
+/* ─────────────── Step 2: Form Details (Unified Optional Grid) ─────────────── */
 
-function StepDetails({
-  form, update, errors, cat, needsFinancial, needsIT,
-}) {
+function StepDetails({ form, update, errors, cat }) {
   return (
     <div className="space-y-5 text-left">
       <SectionHead
         title="Provide ticket information"
         subtitle={cat ? `${cat.label} · ${form.problemType}` : "Issue details"}
       />
-
-      {needsFinancial && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50">
-          <Field label="Account / Card number" error={errors.accountOrCard}>
-            <Input value={form.accountOrCard} onChange={(v) => update("accountOrCard", v)} placeholder="0123-456-789" error={!!errors.accountOrCard} />
-          </Field>
-          <Field label="Transaction date" error={errors.txnDate}>
-            <Input type="date" value={form.txnDate} onChange={(v) => update("txnDate", v)} error={!!errors.txnDate} />
-          </Field>
-          <Field label="Transaction ID (optional)" error={errors.txnId}>
-            <Input value={form.txnId} onChange={(v) => update("txnId", v)} placeholder="TXN8821443" error={!!errors.txnId} />
-          </Field>
-        </div>
-      )}
-
-      {needsIT && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50">
-          <Field label="Asset Tag / Reference" error={errors.assetTag}>
-            <Input value={form.assetTag} onChange={(v) => update("assetTag", v)} placeholder="DMFB-WS-2041" error={!!errors.assetTag} />
-          </Field>
-          <Field label="Error code (optional)" error={errors.errorCode}>
-            <Input value={form.errorCode} onChange={(v) => update("errorCode", v)} placeholder="0x80070005" error={!!errors.errorCode} />
-          </Field>
-        </div>
-      )}
 
       <Field label="Short Summary" error={errors.summary}>
         <Input value={form.summary} onChange={(v) => update("summary", v)} placeholder="Describe the problem in one short line" error={!!errors.summary} maxLength={120} />
@@ -472,6 +472,31 @@ function StepDetails({
           )}
         />
       </Field>
+
+      {/* Unified Optional Reference Fields Grid [1] */}
+      <div className="border border-dashed border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-4">
+        <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
+          <Sparkles className="size-3.5 text-blue-500" /> Supporting Operational Details (Optional)
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <Field label="Asset Tag / Reference">
+            <Input value={form.assetTag} onChange={(v) => update("assetTag", v)} placeholder="e.g. DMFB-WS-2041" />
+          </Field>
+          <Field label="Error Code">
+            <Input value={form.errorCode} onChange={(v) => update("errorCode", v)} placeholder="e.g. 0x80070005" />
+          </Field>
+          <Field label="Account / Card Number">
+            <Input value={form.accountOrCard} onChange={(v) => update("accountOrCard", v)} placeholder="e.g. 0123-456-789" />
+          </Field>
+          <Field label="Transaction Date">
+            <Input type="date" value={form.txnDate} onChange={(v) => update("txnDate", v)} />
+          </Field>
+          <Field label="Transaction ID">
+            <Input value={form.txnId} onChange={(v) => update("txnId", v)} placeholder="e.g. TXN8821443" />
+          </Field>
+        </div>
+      </div>
 
       <Field label="Attachments / Screenshot references">
         <Dropzone files={form.files} onChange={(f) => update("files", f)} />
@@ -508,11 +533,15 @@ function StepDetails({
 
 /* ─────────────── Step 3: Review ─────────────── */
 
-function StepReview({ form, cat, needsFinancial, needsIT }) {
+function StepReview({ form, cat }) {
   const priority =
     form.impact === "branch" ? { label: "Critical", cls: "bg-rose-50 text-rose-700 border-rose-200" } :
     form.impact === "team" ? { label: "High", cls: "bg-amber-50 text-amber-700 border-amber-200" } :
     { label: "Medium", cls: "bg-blue-50 text-blue-700 border-blue-200" };
+
+    const IconComponent = cat ? (ICON_MAP[cat.icon_name] || Monitor) : Monitor;
+    const accentClass = cat ? (ACCENT_MAP[cat.key] || "from-blue-400/15 to-blue-400/0 text-blue-600") : "from-blue-400/15 to-blue-400/0 text-blue-600";
+    const textColorClass = accentClass.split(" ").find(s => s.startsWith("text-")) || "text-blue-600;"
 
   return (
     <div className="space-y-5 text-left">
@@ -522,13 +551,13 @@ function StepReview({ form, cat, needsFinancial, needsIT }) {
         <div className="flex items-center gap-3">
           {cat && (
             <div className="size-10 rounded-lg bg-white border border-slate-200 grid place-items-center">
-              <cat.icon className={cn("size-5", cat.accent.split(" ").find(s => s.startsWith("text-")))} />
+              <IconComponent className={cn("size-5", textColorClass)} />
             </div>
           )}
           <div className="flex-1 min-w-0">
             <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Auto-routed queue</div>
             <div className="text-xs font-bold text-slate-800 flex items-center gap-2 flex-wrap mt-0.5">
-              {cat?.team}
+              {cat?.team_name}
               <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md border", priority.cls)}>
                 {priority.label} priority
               </span>
@@ -543,19 +572,14 @@ function StepReview({ form, cat, needsFinancial, needsIT }) {
         <ReviewRow label="Summary" value={form.summary} />
         <ReviewRow label="Description" value={form.description} multiline />
         <ReviewRow label="Impact" value={form.impact === "branch" ? "Entire Branch Outage" : form.impact === "team" ? "Whole Department" : "Single User"} />
-        {needsFinancial && (
-          <>
-            <ReviewRow label="Account / Card" value={form.accountOrCard} />
-            <ReviewRow label="Transaction Date" value={form.txnDate} />
-            {form.txnId && <ReviewRow label="Transaction ID" value={form.txnId} />}
-          </>
-        )}
-        {needsIT && (
-          <>
-            <ReviewRow label="Asset Tag / Ref" value={form.assetTag} />
-            {form.errorCode && <ReviewRow label="Error Code" value={form.errorCode} />}
-          </>
-        )}
+        
+        {/* Render optional rows dynamically only if they contain data [1] */}
+        {form.accountOrCard && <ReviewRow label="Account / Card" value={form.accountOrCard} />}
+        {form.txnDate && <ReviewRow label="Transaction Date" value={form.txnDate} />}
+        {form.txnId && <ReviewRow label="Transaction ID" value={form.txnId} />}
+        {form.assetTag && <ReviewRow label="Asset Tag / Ref" value={form.assetTag} />}
+        {form.errorCode && <ReviewRow label="Error Code" value={form.errorCode} />}
+        
         {form.files.length > 0 && (
           <ReviewRow label="Attachments" value={`${form.files.length} reference file${form.files.length > 1 ? "s" : ""}`} />
         )}

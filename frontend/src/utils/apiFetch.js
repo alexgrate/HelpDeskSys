@@ -1,4 +1,4 @@
-const getApiBaseUrl = () => {
+export const getApiBaseUrl = () => {
   const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   if (isLocal) {
     return "http://127.0.0.1:8000/api";
@@ -6,8 +6,7 @@ const getApiBaseUrl = () => {
   return "https://helpdesksys.onrender.com/api"; 
 };
 
-const API_BASE_URL = getApiBaseUrl();
-
+export const API_BASE_URL = getApiBaseUrl();
 
 let isRefreshing = false;
 let refreshSubscribers = [];
@@ -22,19 +21,14 @@ function onTokenRefreshed(newAccessToken) {
 }
 
 export async function apiFetch(endpoint, options = {}) {
-  // 1. Resolve full URL
   const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
-
-  // 2. Resolve default headers
   const headers = { ...(options.headers || {}) };
-
-  // 3. Auto-inject access token if saved
   const accessToken = localStorage.getItem("access_token");
+
   if (accessToken && !headers["Authorization"]) {
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  // 4. Auto-detect JSON payload unless form-data
   if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
@@ -47,9 +41,7 @@ export async function apiFetch(endpoint, options = {}) {
   try {
     const response = await fetch(url, fetchOptions);
 
-    // 5. Intercept 401 Unauthorized errors
     if (response.status === 401) {
-      // Loop protection: If the unauthorized request was the refresh endpoint, force logout
       if (url.includes("/auth/token/refresh/")) {
         handleLogoutRedirect();
         return response;
@@ -61,7 +53,6 @@ export async function apiFetch(endpoint, options = {}) {
         return response;
       }
 
-      // If a refresh is not already in progress, trigger it
       if (!isRefreshing) {
         isRefreshing = true;
         try {
@@ -88,7 +79,6 @@ export async function apiFetch(endpoint, options = {}) {
         }
       }
 
-      // Queue concurrent parallel requests while token is refreshing
       return new Promise((resolve) => {
         subscribeTokenRefresh((newAccessToken) => {
           fetchOptions.headers["Authorization"] = `Bearer ${newAccessToken}`;
@@ -103,11 +93,31 @@ export async function apiFetch(endpoint, options = {}) {
   }
 }
 
-function handleLogoutRedirect() {
+export function handleLogoutRedirect() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
   localStorage.removeItem("user");
   if (window.location.pathname !== "/login") {
     window.location.href = "/login";
   }
+}
+
+export function getSlaMetrics(createdAt, priority, status, resolvedAt, ticketSlaHours = null) {
+  const createdDate = new Date(createdAt);
+  const isResolved = status === "Resolved" || status === "Closed";
+  const endDate = isResolved && resolvedAt ? new Date(resolvedAt) : new Date();
+  
+  const elapsedMin = Math.floor((endDate - createdDate) / (1000 * 60));
+  let totalMin = 240; 
+
+  if (ticketSlaHours && ticketSlaHours[priority]) {
+    totalMin = ticketSlaHours[priority] * 60;
+  } else {
+    if (priority === "Critical") totalMin = 60;
+    else if (priority === "High") totalMin = 120;
+    else if (priority === "Low") totalMin = 480;
+  }
+  
+  const remainingMin = totalMin - elapsedMin;
+  return { totalMin, remainingMin, elapsedMin };
 }

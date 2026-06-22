@@ -1,32 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import {
-  Plus,
-  Ticket as TicketIcon,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  ShieldCheck,
-  ArrowRight,
-  BookOpen,
-  Search,
-} from "lucide-react";
+import { Plus, Ticket as TicketIcon, CheckCircle2, Clock, AlertCircle, ShieldCheck, ArrowRight, BookOpen, Search, } from "lucide-react";
 import { StaffShell } from "../components/helpdesk/StaffShell";
 import { cn } from "../utils/cn";
 import { apiFetch } from "../utils/apiFetch";
+import { API_BASE_URL } from "../utils/apiFetch";
 
-const getApiBaseUrl = () => {
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (isLocal) {
-    return "http://127.0.0.1:8000/api";
-  }
-  return "https://helpdesksys.onrender.com/api"; 
-};
-
-const API_BASE_URL = getApiBaseUrl();
-
-const STEPS = ["Submitted", "Pending Manager Approval", "In Progress", "Resolved"];
+const STEPS = ["New", "Pending Approval", "In Progress", "Resolved"];
 
 export default function StaffPortal({ focusRequests }) {
   const [tickets, setTickets] = useState([]);
@@ -34,10 +15,30 @@ export default function StaffPortal({ focusRequests }) {
   const [error, setError] = useState("");
   const [user, setUser] = useState(null);
 
-  const [filter, setFilter] = useState("All");
-  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("Active");
   const listRef = useRef(null);
   const navigate = useNavigate();
+
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [query, setQuery] = useState(searchParams.get("q") || "");
+
+  useEffect(() => {
+    const urlQuery = searchParams.get("q");
+    if (urlQuery !== null) {
+      setQuery(urlQuery);
+    }
+  }, [searchParams]);
+
+  const handleLocalQueryChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    if (!val) {
+      setSearchParams({}); 
+    } else {
+      setSearchParams({ q: val });
+    }
+  };
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -79,20 +80,39 @@ export default function StaffPortal({ focusRequests }) {
     }
   }, [focusRequests, isLoading]);
 
-  const filtered = tickets.filter(
-    (t) =>
-      (filter === "All" || t.status === filter) &&
-      (t.title?.toLowerCase().includes(query.toLowerCase()) || 
-       t.summary.toLowerCase().includes(query.toLowerCase()) || 
-       t.ticket_id.toLowerCase().includes(query.toLowerCase())),
-  );
+  const filtered = tickets.filter((t) =>{
+    const matchesSearch = t.summary.toLowerCase().includes(query.toLowerCase()) || t.ticket_id.toLowerCase().includes(query.toLowerCase())
+
+    if (!matchesSearch) return false
+
+    if (filter === "All") return true;
+    if (filter === "Active") {
+      return t.status !== "Resolved" && t.status !== "Closed"
+    }
+    return t.status === filter
+  });
 
   const counts = {
     All: tickets.length,
     open: tickets.filter((t) => t.status !== "Resolved" && t.status !== "Closed").length,
     resolved: tickets.filter((t) => t.status === "Resolved" || t.status === "Closed").length,
-    pending: tickets.filter((t) => t.status === "Pending Manager Approval").length,
+    pending: tickets.filter((t) => t.status === "Pending Approval").length,
   };
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 5; 
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, query]);
+
+  const totalFilteredCount = filtered.length;
+  const totalPages = Math.ceil(totalFilteredCount / pageSize) || 1;
+
+  const paginatedRequests = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filtered.slice(startIndex, startIndex + pageSize);
+  }, [filtered, currentPage]);
 
   const firstName = user?.first_name || "Staff Member";
   const branchName = user?.branch || "Branch";
@@ -145,7 +165,7 @@ export default function StaffPortal({ focusRequests }) {
                 <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={handleLocalQueryChange}
                   placeholder="Search by ID or title…"
                   className="h-9 pl-9 pr-3 rounded-lg bg-white border border-slate-200 focus:border-blue-500 outline-none text-sm w-56"
                 />
@@ -164,7 +184,7 @@ export default function StaffPortal({ focusRequests }) {
           {!isLoading && !error && (
             <>
               <div className="flex gap-1 p-1 mx-5 mt-4 rounded-lg bg-slate-100 w-fit">
-                {["All", "Submitted", "Pending Manager Approval", "In Progress", "Resolved"].map((f) => {
+                {["Active", "All", "Submitted", "Pending Approval", "In Progress", "Resolved"].map((f) => {
                   const active = filter === f;
                   return (
                     <button
@@ -191,7 +211,7 @@ export default function StaffPortal({ focusRequests }) {
                 {filtered.length === 0 && (
                   <li className="px-5 py-10 text-center text-sm text-slate-400">No requests match that filter.</li>
                 )}
-                {filtered.map((t, i) => (
+                {paginatedRequests.map((t, i) => (
                   <motion.li
                     key={t.id}
                     initial={{ opacity: 0, y: 6 }}
@@ -224,13 +244,37 @@ export default function StaffPortal({ focusRequests }) {
                           <span>Updated {new Date(t.updated_at).toLocaleDateString()}</span>
                         </div>
                       </div>
-                      <StatusBadge status={t.status} />
+                      <StatusBadge status={t.status} pendingApprover={t.pending_approver_role} />
                     </div>
 
-                    <ProgressSteps status={t.status} />
+                    <ProgressSteps status={t.status} approvalSequence={t.approval_sequence} activeApprovalStep={t.active_approval_step} />
                   </motion.li>
                 ))}
               </ul>
+
+               {totalFilteredCount > pageSize && (
+                <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-500 bg-slate-50/50 rounded-b-2xl">
+                  <span>
+                    Showing {Math.min(totalFilteredCount, (currentPage - 1) * pageSize + 1)}-{Math.min(totalFilteredCount, currentPage * pageSize)} of {totalFilteredCount} requests
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-600 cursor-pointer outline-none transition"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-600 cursor-pointer outline-none transition"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </section>
@@ -279,45 +323,99 @@ function StatCard({ label, value, icon: Icon, tone }) {
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, pendingApprover }) {
   const map = {
-    Submitted: { cls: "bg-slate-100 text-slate-600 border-slate-200", icon: AlertCircle },
-    "Pending Manager Approval": { cls: "bg-amber-50 text-amber-700 border-amber-200", icon: ShieldCheck },
-    "In Progress": { cls: "bg-blue-50 text-blue-700 border-blue-200", icon: Clock },
+    Submitted: { cls: "bg-blue-50 text-blue-700 border-blue-200", icon: AlertCircle },
+    "Pending Approval": { cls: "bg-amber-50 text-amber-700 border-amber-200", icon: ShieldCheck },
+    "In Progress": { cls: "bg-indigo-50 text-indigo-700 border-indigo-200", icon: Clock },
     Resolved: { cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
-    Closed: { cls: "bg-slate-100 text-slate-600 border-slate-200", icon: CheckCircle2 }
+    Closed: { cls: "bg-slate-100 text-slate-600 border-slate-200", icon: CheckCircle2 },
+    "Returned for Update": { cls: "bg-rose-50 text-rose-700 border-rose-200 animate-pulse border-rose-300", icon: AlertCircle }
   };
+
+
   const badge = map[status] || map.Submitted;
   const { cls, icon: Icon } = badge;
+
   return (
     <span className={cn("shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-full border", cls)}>
-      <Icon className="size-3" /> {status}
+      <Icon className="size-3" /> 
+      {status === "Pending Approval" && pendingApprover
+        ? `Pending ${pendingApprover} Approval`
+        : status === "Submitted" ? "New" : status}
     </span>
   );
 }
 
-function ProgressSteps({ status }) {
-  const currentIdx = STEPS.indexOf(status);
+function ProgressSteps({ status, approvalSequence = [], activeApprovalStep }) {
+
+  const steps = ["New"]
+  approvalSequence.forEach((role) => {
+    steps.push(`${role} Approval`)
+  })
+  steps.push("In Progress", "Resolved")
+
+  let currentIdx = 0;
+  let isReturned = status === "Returned for Update";
+  const isCompleted = status === "Resolved" || status === "Closed";
+
+
+  if (isCompleted) {
+    currentIdx = steps.indexOf("Resolved");
+  } else if (status === "In Progress") {
+    currentIdx = steps.indexOf("In Progress");
+  } else if (isReturned) {
+    currentIdx = 0; // Kicked back to the very beginning (New)
+  } else if (status?.startsWith("Pending") && status?.includes("Approval") && activeApprovalStep) {
+    // Math Shift: activeApprovalStep is 1-based (1 = HOD, 2 = Compliance)
+    // We map it to currentIdx as activeApprovalStep - 1
+    // This holds the bar back at index 0 (New) until HOD approves, index 1 (HOD) until Compliance approves, etc.
+    currentIdx = Math.max(0, activeApprovalStep - 1);
+  } else {
+    currentIdx = 0; // Default fallback
+  }
+
   return (
     <div className="mt-3 flex items-center gap-2">
-      {STEPS.map((s, i) => {
-        const done = i <= currentIdx;
-        const current = i === currentIdx && status !== "Resolved";
+      {steps.map((s, i) => {
+        const done = i < currentIdx;
+        const current = i === currentIdx && !isCompleted;
+
+        let widthPct = "0%";
+        if (isCompleted || done) {
+          widthPct = "100%";
+        } else if (current) {
+          widthPct = "50%"; // Active step displays as half-filled
+        }
+
+        let barColor = "bg-indigo-600"; // Completed steps display in solid indigo
+        if (isCompleted) {
+          barColor = "bg-emerald-500"; // Green color on resolution
+        } else if (isReturned && current) {
+          barColor = "bg-rose-500"; // Red highlight alert for returned stage
+        } else if (current) {
+          barColor = "bg-blue-500"; // Blue pulsing for normal active progress
+        }
+
         return (
           <div key={s} className="flex-1 flex items-center gap-2">
             <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: done ? "100%" : "0%" }}
+                animate={{ width: widthPct }}
                 transition={{ duration: 0.5, delay: i * 0.05 }}
-                className={cn(
-                  "h-full rounded-full",
-                  status === "Resolved" || status === "Closed" ? "bg-emerald-500" : current ? "bg-blue-500" : "bg-indigo-600"
-                )}
-              />
+                className={cn("h-full rounded-full", current && "animate-pulse", barColor)}
+                />
             </div>
-            <span className={cn("text-[10px] whitespace-nowrap hidden lg:inline", done ? "text-slate-800 font-medium" : "text-slate-400")}>
-              {s}
+            <span className={cn(
+              "text-[10px] whitespace-nowrap hidden lg:inline",
+              done || isCompleted 
+                ? "text-slate-800 font-medium" 
+                : current 
+                  ? isReturned ? "text-rose-600 font-bold" : "text-blue-600 font-bold"
+                  : "text-slate-400"
+            )}>
+              {isReturned && current ? "Correction Required" : s}
             </span>
           </div>
         );

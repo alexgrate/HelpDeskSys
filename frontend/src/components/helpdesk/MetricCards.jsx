@@ -12,27 +12,22 @@ const toneStyles = {
 };
 
 export function MetricCards({ tickets = [] }) {
-  // 1. Open Tickets (Any ticket not Closed or Resolved)
   const openCount = tickets.filter(t => t.status !== "Closed" && t.status !== "Resolved").length;
-
-  // 2. Critical / SLA Risk (Priority level "Critical")
   const criticalCount = tickets.filter(t => t.priority === "Critical" && t.status !== "Closed" && t.status !== "Resolved").length;
-
-  // 3. Overdue (remaining SLA time resolved from created_at is negative)
   const overdueCount = tickets.filter(t => {
     if (t.status === "Closed" || t.status === "Resolved") return false;
     const { remainingMin } = getSlaMetrics(t.created_at, t.priority);
     return remainingMin < 0;
   }).length;
 
-  // 4. Resolved today
   const resolvedCount = tickets.filter(t => t.status === "Resolved" || t.status === "Closed").length;
 
   const metricsList = [
     { label: "Open Tickets", value: openCount.toString(), delta: "Active Queue", trend: "up", icon: Inbox, tone: "neutral" },
     { label: "Critical / SLA Risk", value: criticalCount.toString(), delta: "Triage Priority", trend: "up", icon: AlertTriangle, tone: "warning", pulse: criticalCount > 0 },
     { label: "Overdue", value: overdueCount.toString(), delta: "Breached SLA", trend: "down", icon: TimerOff, tone: "critical" },
-    { label: "Resolved Today", value: resolvedCount.toString(), delta: "Closed Issues", trend: "up", icon: CheckCircle2, tone: "success" },
+    
+    { label: "Processed Today", value: resolvedCount.toString(), delta: "Closed Issues", trend: "up", icon: CheckCircle2, tone: "success" },
   ];
 
   return (
