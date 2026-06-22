@@ -34,7 +34,10 @@ class IsDepartmentAgentOrHOD(permissions.BasePermission):
         if obj.submitted_by == user:
             return True
         
-        if obj.category and obj.category.team:
-            return user.department == obj.category.team
+        try:
+            if obj.category and obj.category.team:
+                return user.department == obj.category.team
+        except Exception:
+            return False
 
         return False
