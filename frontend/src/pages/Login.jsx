@@ -61,7 +61,7 @@ export default function Login() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-slate-50/50 text-slate-900 font-sans">
       
-      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-[#240C54] text-slate-200 overflow-hidden">
+      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-[#4f1a60] text-slate-200 overflow-hidden">
         <div className="absolute inset-0 opacity-25 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-500 via-transparent to-transparent" />
         <div className="absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
 
@@ -200,7 +200,7 @@ export default function Login() {
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full h-11 rounded-xl bg-[#4D1D6F] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#3C1658] transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                    className="w-full h-11 rounded-xl bg-[#4f1a60] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#3c144a] transition-colors shadow-sm cursor-pointer disabled:opacity-50"
                   >
                     {isLoading ? "Authenticating..." : "Continue"} <ArrowRight className="h-4 w-4" />
                   </button>
@@ -411,7 +411,7 @@ function MfaStep({ email, preAuthToken, devCode, onBack, onSuccess }) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full h-11 rounded-xl bg-[#4D1D6F] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#3C1658] transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+          className="w-full h-11 rounded-xl bg-[#4f1a60] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#3c144a] transition-colors shadow-sm cursor-pointer disabled:opacity-50"
         >
           {isLoading ? "Verifying..." : "Verify & sign in"} <ArrowRight className="h-4 w-4" />
         </button>

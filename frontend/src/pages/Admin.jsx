@@ -1103,7 +1103,7 @@ function TeamMembers({ departments, roles, showToast }) {
                 <tr key={m.id} className="group hover:bg-slate-50/50">
                   <td className="py-3.5 pl-2">
                     <div className="flex items-center gap-3">
-                      <div className="relative size-9 rounded-full bg-[#4D1D6F] text-white font-bold text-xs grid place-items-center shadow-inner">
+                      <div className="relative size-9 rounded-full bg-[#4f1a60] text-white font-bold text-xs grid place-items-center shadow-inner">
                         {initials}
                         <span
                           className={cn(

@@ -99,7 +99,7 @@ export default function ResetPassword() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-slate-50/50 text-slate-800 font-sans">
       {/* Brand panel */}
-      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-[#240C54] text-slate-200 overflow-hidden">
+      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-[#4f1a60] text-slate-200 overflow-hidden">
         <div className="absolute inset-0 opacity-30 bg-[radial-gradient(ellipse_at_top_right,_var(--primary)_0%,_transparent_55%)]" />
         <div className="absolute -bottom-32 -left-24 size-96 rounded-full bg-blue-500/10 blur-3xl" />
 
@@ -199,7 +199,7 @@ export default function ResetPassword() {
               <button
                 disabled={isLoading || !uid || !token}
                 type="submit"
-                className="w-full h-11 rounded-lg bg-[#4D1D6F] text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-[#3C1658] transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+                className="w-full h-11 rounded-lg bg-[#4f1a60] text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-[#3c144a] transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
               >
                 {isLoading ? <Loader2 className="size-4 animate-spin" /> : <>Reset Password <ArrowRight className="size-4" /></>}
               </button>

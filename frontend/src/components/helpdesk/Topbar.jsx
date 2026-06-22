@@ -141,7 +141,7 @@ export function Topbar({ onMenu }) {
             </div>
             
             <div className="relative">
-              <div className="h-9 w-9 rounded-full bg-[#4D1D6F] text-white font-bold text-xs flex items-center justify-center border-2 border-white shadow-sm">
+              <div className="h-9 w-9 rounded-full bg-[#4f1a60] text-white font-bold text-xs flex items-center justify-center border-2 border-white shadow-sm">
                 {displayInitials}
               </div>
               <span className="absolute bottom-0 right-0 size-2.5 rounded-full border-2 border-white bg-emerald-500" />
@@ -158,7 +158,7 @@ export function Topbar({ onMenu }) {
                 className="absolute right-0 mt-2 w-80 rounded-2xl bg-white border border-slate-200/80 shadow-xl shadow-slate-200/50 z-50 overflow-hidden text-slate-800 text-left"
               >
                 <div className="p-4 flex items-center gap-3 border-b border-slate-100">
-                  <div className="h-12 w-12 rounded-full bg-[#4D1D6F] text-white font-bold text-sm flex items-center justify-center shadow-inner">
+                  <div className="h-12 w-12 rounded-full bg-[#4f1a60] text-white font-bold text-sm flex items-center justify-center shadow-inner">
                     {displayInitials}
                   </div>
                   <div>

@@ -109,7 +109,7 @@ class TicketCategory(models.Model):
     sla_medium_hours = models.PositiveIntegerField(default=4)
     sla_low_hours = models.PositiveIntegerField(default=8)
 
-    color = models.CharField(max_length=7, default='#3b82f6')
+    color = models.CharField(max_length=7, default='#4f1a60')
 
     class Meta:
         verbose_name_plural = "Ticket Categories"

@@ -99,7 +99,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
               onClick={isMobile ? onMobileClose : undefined}
               className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-bold transition-all ${
                 active
-                  ? "bg-[#4D1D6F]/10 text-[#7A3EB5]"
+                  ? "bg-[#4f1a60]/10 text-[#4f1a60]"
                   : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200"
               }`}
             >
@@ -120,7 +120,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
                     </span>
                   )}
                   {showWorkloadBadge && (
-                    <span className="size-4 rounded-full bg-[#4D1D6F] text-white text-[9px] font-black grid place-items-center shrink-0 tabular-nums shadow-sm">
+                    <span className="size-4 rounded-full bg-[#4f1a60] text-white text-[9px] font-black grid place-items-center shrink-0 tabular-nums shadow-sm">
                       {badgeCounts.my_workload}
                     </span>
                   )}
