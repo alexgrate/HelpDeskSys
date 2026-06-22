@@ -25,7 +25,7 @@ class IsDepartmentAgentOrHOD(permissions.BasePermission):
 
         user = request.user
 
-        if user.role_name == 'Admin':
+        if user.is_superuser or user.role_name == 'Admin':
             return True
 
         if obj.status.startswith('Pending') and 'Approval' in obj.status:
@@ -34,10 +34,7 @@ class IsDepartmentAgentOrHOD(permissions.BasePermission):
         if obj.submitted_by == user:
             return True
         
-        try: 
-            category_obj = TicketCategory.objects.get(key=obj.category)
-            ticket_department = category_obj.team
-        except TicketCategory.DoesNotExist:
-            return False
+        if obj.category and obj.category.team:
+            return user.department == obj.category.team
 
-        return user.department == ticket_department
+        return False
