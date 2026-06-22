@@ -187,7 +187,7 @@ export function TicketTable({ tickets = [], isLoading, error, currentUser, onTic
       }
 
       const slaA = getSlaMetrics(a.created_at, a.priority, a.status, a.resolved_at, a.sla_hours);
-      const slaB = getSlaMetrics(b.created_at, b.priority, b.status, b.resolved_at, a.sla_hours);
+      const slaB = getSlaMetrics(b.created_at, b.priority, b.status, b.resolved_at, b.sla_hours);
 
       const isA_Breached = slaA.remainingMin < 0;
       const isB_Breached = slaB.remainingMin < 0;
