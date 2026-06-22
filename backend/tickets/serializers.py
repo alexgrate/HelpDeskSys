@@ -182,7 +182,6 @@ class TicketSerializer(serializers.ModelSerializer):
             
         return super().update(instance, validated_data)
 
-
 class TicketCreateSerializer(serializers.ModelSerializer):
     uploaded_files = serializers.ListField(
         child=serializers.FileField(allow_empty_file=False, use_url=False, validators=[validate_secure_file]),

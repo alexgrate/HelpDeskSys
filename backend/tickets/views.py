@@ -572,31 +572,23 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
             severity=severity_level
         )
 
-        try:
-            category_obj = TicketCategory.objects.get(key=ticket.category)
-            department_name = category_obj.team.name
-        except TicketCategory.DoesNotExist:
-            department_name = "Operations Team"
+        category_obj = ticket.category
+        department_name = category_obj.team.name if (category_obj and category_obj.team) else "Operations Team"
         
         next_step = ApprovalStep.objects.filter(
-            category__key=ticket.category,
+            category=ticket.category,
             step_number__gt=approval.step_number
         ).order_by('step_number').first()
 
         prev_step = ApprovalStep.objects.filter(
-            category__key=ticket.category,
+            category=ticket.category,
             step_number__lt=approval.step_number
         ).order_by('-step_number').first()
 
         if verdict == 'Approved':
             if next_step:
                 next_role_name = next_step.role.name
-                
-                try:
-                    category_obj = TicketCategory.objects.get(key=ticket.category)
-                    next_target_dept = next_step.department or category_obj.team
-                except TicketCategory.DoesNotExist:
-                    next_target_dept = None
+                next_target_dept = next_step.department or (category_obj.team if category_obj else None)
 
                 existing_next = ApprovalRequest.objects.filter(ticket=ticket, step_number=next_step.step_number).first()
                 if existing_next:
@@ -608,7 +600,7 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
                 else:
                     ApprovalRequest.objects.create(
                         ticket=ticket,
-                        category=f"{ticket.category.upper()} - {next_role_name}",
+                        category=f"{ticket.category.key.upper()} - {next_role_name}",
                         requested_by=ticket.submitted_by,
                         status='Pending',
                         approver_role=next_role_name,
@@ -647,11 +639,7 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
                 prev_approval = ApprovalRequest.objects.filter(ticket=ticket, step_number=prev_step.step_number).first()
                 if prev_approval:
                     prev_approval.status = 'Pending'
-                    try:
-                        category_obj = TicketCategory.objects.get(key=ticket.category)
-                        prev_target_dept = prev_step.department or category_obj.team
-                    except TicketCategory.DoesNotExist:
-                        prev_target_dept = None
+                    prev_target_dept = prev_step.department or (category_obj.team if category_obj else None)
                     prev_approval.approver_department = prev_target_dept
                     prev_approval.save()
 
@@ -682,11 +670,7 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
                 prev_approval = ApprovalRequest.objects.filter(ticket=ticket, step_number=prev_step.step_number).first()
                 if prev_approval:
                     prev_approval.status = 'Pending'
-                    try:
-                        category_obj = TicketCategory.objects.get(key=ticket.category)
-                        prev_target_dept = prev_step.department or category_obj.team
-                    except TicketCategory.DoesNotExist:
-                        prev_target_dept = None
+                    prev_target_dept = prev_step.department or (category_obj.team if category_obj else None)
                     prev_approval.approver_department = prev_target_dept
                     prev_approval.save()
 
