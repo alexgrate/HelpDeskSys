@@ -26,8 +26,12 @@ export function StaffShell({ children }) {
   const sidebarContent = (isMobile = false) => (
     <div className="flex flex-col h-full bg-[#1A2332] text-slate-200">
       <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-700/50">
-        <div className="size-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-500 grid place-items-center shrink-0">
-          <Building2 className="size-5 text-white" />
+        <div className="h-10 w-10 rounded-xl bg-white grid place-items-center shadow-lg">
+          <img 
+            src={brandSymbol}
+            alt="Dash MFB"
+            className="h-9 w-9 object-contain shrink-0"
+          />
         </div>
         {(!collapsed || isMobile) && (
           <div className="text-left overflow-hidden">

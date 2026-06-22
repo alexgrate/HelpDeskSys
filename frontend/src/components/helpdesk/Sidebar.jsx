@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Building2, LayoutDashboard, Inbox, ShieldAlert, BarChart3, BookOpen, FolderTree, FileCheck, Wrench, X } from "lucide-react";
 import { apiFetch } from "../../utils/apiFetch";
+import brandSymbol from "../../assets/brand-symbol.png"
 
 
 const NAV_ITEMS = [
@@ -63,8 +64,12 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
   const sidebarContent = (isMobile = false) => (
     <div className="flex flex-col h-full bg-[#0B1329] text-slate-200 text-left font-sans">
       <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-800">
-        <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-500 grid place-items-center shrink-0">
-          <Building2 className="h-5 w-5 text-white" />
+        <div className="h-10 w-10 rounded-xl bg-white grid place-items-center shadow-lg">
+          <img 
+            src={brandSymbol}
+            alt="Dash MFB"
+            className="h-9 w-9 object-contain shrink-0"
+          />
         </div>
         {(!collapsed || isMobile) && (
           <div className="text-left overflow-hidden">

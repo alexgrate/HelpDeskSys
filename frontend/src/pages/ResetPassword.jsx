@@ -3,6 +3,8 @@ import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Building2, Lock, ArrowRight, AlertCircle, CheckCircle2, ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
 import { API_BASE_URL } from "../utils/apiFetch"; 
+import brandSymbol from "../assets/brand-symbol.png"
+
 
 
 export default function ResetPassword() {
@@ -102,12 +104,16 @@ export default function ResetPassword() {
         <div className="absolute -bottom-32 -left-24 size-96 rounded-full bg-blue-500/10 blur-3xl" />
 
         <div className="relative flex items-center gap-2.5">
-          <div className="size-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-500 grid place-items-center">
-            <Building2 className="size-5 text-white" />
+          <div className="h-10 w-10 rounded-xl bg-white grid place-items-center shadow-lg">
+            <img 
+              src={brandSymbol} 
+              alt="Dash MFB" 
+              className="h-7 w-7 object-contain" 
+            />
           </div>
           <div className="text-left">
-            <div className="text-sm font-semibold">Dash MFB</div>
-            <div className="text-[11px] text-slate-400">Help Desk · Control Tower</div>
+            <div className="text-sm font-black text-white tracking-wide leading-tight">Dash MFB</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Help Desk · Control Tower</div>
           </div>
         </div>
 
@@ -129,8 +135,12 @@ export default function ResetPassword() {
       <div className="flex items-center justify-center p-6 md:p-10 bg-white">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="size-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-500 grid place-items-center">
-              <Building2 className="size-5 text-white" />
+            <div className="h-10 w-10 rounded-xl bg-white grid place-items-center shadow-lg">
+              <img 
+                src={brandSymbol}
+                alt="Dash MFB" 
+                className="h-7 w-7 object-contain" 
+              />
             </div>
             <div className="text-sm font-semibold">Dash MFB</div>
           </div>

@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Building2, Lock, Mail, ShieldCheck, KeyRound, ArrowRight, Fingerprint, AlertCircle } from "lucide-react";
 import { API_BASE_URL } from "../utils/apiFetch";
+import brandSymbol from "../assets/brand-symbol.png"
 
 const cn = (...classes) => classes.filter(Boolean).join(" ");
 
@@ -65,12 +66,16 @@ export default function Login() {
         <div className="absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
 
         <div className="relative flex items-center gap-2.5">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-500 grid place-items-center shadow-lg shadow-blue-500/20">
-            <Building2 className="h-5 w-5 text-white" />
+         <div className="h-10 w-10 rounded-xl bg-white grid place-items-center shadow-lg">
+            <img 
+              src={brandSymbol}
+              alt="Dash MFB" 
+              className="h-7 w-7 object-contain" 
+            />
           </div>
           <div className="text-left">
             <div className="text-sm font-bold text-white tracking-wide leading-tight">Dash MFB</div>
-            <div className="text-[10px] text-slate-400">Help Desk · Control Tower</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Help Desk · Control Tower</div>
           </div>
         </div>
 
@@ -102,15 +107,18 @@ export default function Login() {
 
       <div className="flex items-center justify-center p-6 md:p-10 bg-white">
         <div className="w-full max-w-sm">
-          
-          <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-500 grid place-items-center shadow-md">
-              <Building2 className="h-5 w-5 text-white" />
-            </div>
-            <div className="text-left">
-              <div className="text-sm font-bold text-slate-900 leading-tight">Dash MFB</div>
-              <p className="text-[9px] text-slate-400">Help Desk · Control Tower</p>
-            </div>
+
+          <div className="lg:hidden flex flex-col items-center mb-8">
+            <div className="h-10 w-10 rounded-xl bg-white grid place-items-center shadow-lg">
+            <img 
+              src={brandSymbol}
+              alt="Dash MFB" 
+              className="h-7 w-7 object-contain" 
+            />
+          </div>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-2">
+              Help Desk · Control Tower
+            </p>
           </div>
 
           <AnimatePresence mode="wait">
