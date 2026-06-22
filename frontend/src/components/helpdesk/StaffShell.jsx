@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Building2, LayoutDashboard, Inbox, BookOpen, ChevronLeft, LifeBuoy, Menu, X } from "lucide-react";
 import { Topbar } from "./Topbar";
+import brandSymbol from "../../assets/brand-symbol.png"
 
 const NAV = [
   { label: "Dashboard", icon: LayoutDashboard, to: "/staff-portal" },
