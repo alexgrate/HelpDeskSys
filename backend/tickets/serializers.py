@@ -220,10 +220,10 @@ class TicketCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         uploaded_files = validated_data.pop('uploaded_files', [])
-        category = validated_data.get('category')
+        category_obj = validated_data.get('category')
 
         is_high_risk = category_obj.is_high_risk if category_obj else False
-        
+
         if is_high_risk:
             first_step = category_obj.steps.order_by('step_number').first()
             if first_step:
