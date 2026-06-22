@@ -74,16 +74,18 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_category_label(self, obj):
         try:
-            category_obj = TicketCategory.objects.get(key=obj.category)
-            return category_obj.label
-        except TicketCategory.DoesNotExist:
-            return obj.category.upper()
+            if obj.category:
+                return obj.category.label
+            return "UNKNOWN"
+        except Exception:
+            return str(obj.category_id).upper() if obj.category_id else "UNKNOWN"
 
     def get_category_color(self, obj):
         try:
-            category_obj = TicketCategory.objects.get(key=obj.category)
-            return getattr(category_obj, 'color', '#3b82f6')
-        except TicketCategory.DoesNotExist:
+            if obj.category:
+                return getattr(obj.category, 'color', '#3b82f6')
+            return '#64748b'
+        except Exception:
             return '#64748b'
 
     def get_assignee_name(self, obj):
@@ -93,9 +95,10 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_approval_sequence(self, obj):
         try:
-            category_obj = TicketCategory.objects.get(key=obj.category)
-            return list(category_obj.steps.order_by('step_number').values_list('role__name', flat=True))
-        except TicketCategory.DoesNotExist:
+            if obj.category:
+                return list(obj.category.steps.order_by('step_number').values_list('role__name', flat=True))
+            return []
+        except Exception:
             return []
 
     def get_active_approval_step(self, obj):
@@ -114,9 +117,10 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_category_department(self, obj):
         try:
-            category_obj = TicketCategory.objects.get(key=obj.category)
-            return category_obj.team.name if category_obj.team else None
-        except TicketCategory.DoesNotExist:
+            if obj.category and obj.category.team:
+                return obj.category.team.name
+            return None
+        except Exception:
             return None
 
     def validate(self, attrs):
