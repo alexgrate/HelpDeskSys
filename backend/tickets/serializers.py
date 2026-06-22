@@ -163,8 +163,9 @@ class TicketSerializer(serializers.ModelSerializer):
 
         if status in ['Pending Manager Approval', 'Pending Approval', 'Pending']:
             validated_data['status'] = 'Pending Approval'
-            try:
-                category_obj = TicketCategory.objects.get(key=instance.category)
+            
+            category_obj = instance.category
+            if category_obj:
                 first_step = category_obj.steps.order_by('step_number').first()
                 if first_step:                  
                     first_req = instance.approval_requests.filter(step_number=first_step.step_number).first()
@@ -175,8 +176,6 @@ class TicketSerializer(serializers.ModelSerializer):
                         first_req.save()
                     
                     instance.approval_requests.filter(step_number__gt=first_step.step_number).delete()
-            except TicketCategory.DoesNotExist:
-                pass
 
         for file in uploaded_files:
             TicketAttachment.objects.create(ticket=instance, file=file)
