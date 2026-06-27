@@ -1,9 +1,13 @@
 export const getApiBaseUrl = () => {
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  const isLocal =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
+
   if (isLocal) {
     return "http://127.0.0.1:8000/api";
   }
-  return "https://helpdesksys.onrender.com/api"; 
+
+  return import.meta.env.VITE_API_BASE_URL;
 };
 
 export const API_BASE_URL = getApiBaseUrl();
