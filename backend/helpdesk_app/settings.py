@@ -43,11 +43,6 @@ ALLOWED_HOSTS = os.environ.get(
     '127.0.0.1,localhost'
 ).split(',')
 
-CSRF_TRUSTED_ORIGINS = os.environ.get(
-    "DJANGO_CSRF_TRUSTED_ORIGINS",
-    FRONTEND_URL
-).split(",")
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -209,6 +204,11 @@ else:
         'CORS_ALLOWED_ORIGINS',
         FRONTEND_URL
     ).split(',')
+
+CSRF_TRUSTED_ORIGINS = os.environ.get(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    FRONTEND_URL
+).split(",")
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
