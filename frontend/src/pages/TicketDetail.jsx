@@ -436,6 +436,37 @@ function TicketHeader({ ticket }) {
         </div>
       </div>
 
+      {(ticket.asset_tag || ticket.error_code || ticket.account_or_card || ticket.txn_date || ticket.txn_id || ticket.impact) && (
+        <div className="mt-5 pt-4 border-t border-slare-100 text-left">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-3">
+            Supporting Operational Details
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-6 p-4 bg-slate-50 border border-slate-200/50 rounded-xl">
+            {ticket.impact && (
+              <DetailItem
+                label="Scope Impact"
+                value={ticket.impact === "branch" ? "Entire Branch Outage" : ticket.impact === "team" ? "Whole Department" : "Single User"}
+              />
+            )}
+            {ticket.asset_tag && (
+              <DetailItem label="Asset Tag / Reference" value={ticket.asset_tag} />
+            )}
+            {ticket.error_code && (
+              <DetailItem label="Error Code" value={ticket.error_code} />
+            )}
+            {ticket.account_or_card && (
+              <DetailItem label="Account / Card Number" value={ticket.account_or_card} />
+            )}
+            {ticket.txn_date && (
+              <DetailItem label="Transaction Date" value={new Date(ticket.txn_date).toLocaleDateString()} />
+            )}
+            {ticket.txn_id && (
+              <DetailItem label="Transaction ID" value={ticket.txn_id} />
+            )}
+          </div>
+        </div>
+      )}
+
       {ticket.attachments && ticket.attachments.length > 0 && (
         <div className="mt-5 pt-4 border-t border-slate-100 text-left">
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-2">Attached Evidence / Screenshots</div>
@@ -986,5 +1017,14 @@ function InfoRow({ icon, label, value, highlight }) {
       </div>
     </div>
   );
+}
+
+function DetailItem({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[9px] uppercase tracking-wider text-slate-400 font-bold leading-none">{label}</div>
+      <div className="text-xs font-bold text-slate-700 truncate mt-1">{value}</div>
+    </div>
+  )
 }
 

@@ -220,11 +220,11 @@ class PasswordResetRequestView(APIView):
             )
 
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(email__iexact=email)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             
-            domain = request.META.get('HTTP_ORIGIN', 'http://localhost:5173')
+            domain = settings.FRONTEND_URL
             reset_url = f"{domain}/reset-password?uid={uid}&token={token}"
 
             subject = "Dash MFB - Password Reset Request"

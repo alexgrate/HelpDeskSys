@@ -223,7 +223,6 @@ def trigger_manager_approval_request(sender, instance, created, **kwargs):
 
             if not existing_requests.exists():
                 first_step = steps.first()
-                
                 category_obj = instance.category
                 target_dept = first_step.department or category_obj.team
 
@@ -237,10 +236,34 @@ def trigger_manager_approval_request(sender, instance, created, **kwargs):
                     step_number=first_step.step_number
                 )
 
+@receiver(post_save, sender=Ticket)
+def notify_new_ticket_creation(sender, instance, created, **kwargs):
+    if created and instance.status == 'New':
+        from tickets.views import send_email_async
+        
+        category_obj = instance.category
+        if category_obj and category_obj.team:
+            agents = User.objects.filter(role__is_agent=True, department=category_obj.team)
+            recipient_list = [agent.email for agent in agents if agent.email]
+
+            if recipient_list:
+                subject = f"New Ticket Routed to Queue: {instance.ticket_id}"
+                message = (
+                    f"Hello Team,\n\n"
+                    f"A new ticket has been submitted under your department's queue.\n\n"
+                    f"    Ticket ID: {instance.ticket_id}\n"
+                    f"    Summary: {instance.summary}\n"
+                    f"    Priority: {instance.priority}\n\n"
+                    f"Please log in to your dashboard to claim and begin active processing."
+                )
+                send_email_async(subject, message, recipient_list)
+
 
 @receiver(post_save, sender=ApprovalRequest)
 def notify_managers_of_pending_approval(sender, instance, created, **kwargs):
     if created and instance.status == 'Pending':
+        from tickets.views import send_email_async
+
         managers = User.objects.filter(
             role__name=instance.approver_role,
             department=instance.approver_department
@@ -255,9 +278,25 @@ def notify_managers_of_pending_approval(sender, instance, created, **kwargs):
                 ticket=instance.ticket 
             )
 
+            recipient_list = [mgr.email for mgr in managers if mgr.email]
+            if recipient_list:
+                subject = f"Action Required: Dual-Control Approval Needed for {instance.ticket.ticket_id}"
+                message = (
+                    f"Hello Manager,\n\n"
+                    f"{instance.requested_by.first_name} {instance.requested_by.last_name} has submitted a high-risk request that requires your dual-control authorization [1].\n\n"
+                    f"    Ticket ID: {instance.ticket.ticket_id}\n"
+                    f"    Summary: {instance.ticket.summary}\n"
+                    f"    Priority: {instance.ticket.priority}\n"
+                    f"    Current Step: {instance.category}\n\n"
+                    f"Please log in to your Approvals Hub to review and execute your decision [1, 2]."
+                )
+                send_email_async(subject, message, recipient_list)
+
 @receiver(post_save, sender=TicketComment)
 def notify_comment_activities(sender, instance, created, **kwargs):
     if created:
+        from ticket.views import send_email_async
+
         mentions = re.findall(r'@(\w+)', instance.body.lower())
         notified_users = set()
 
@@ -273,6 +312,17 @@ def notify_comment_activities(sender, instance, created, **kwargs):
                     ticket=instance.ticket
                 )
                 notified_users.add(user.id)
+
+                if user.email:
+                    subject = f"Dash MFB Support - Mentioned on {instance.ticket.ticket_id}"
+                    message = (
+                        f"Hello,\n\n"
+                        f"{instance.author.first_name or 'Someone'} mentioned you in a comment on ticket #{instance.ticket.ticket_id}.\n\n"
+                        f"Comment:\n"
+                        f"\"{instance.body}\"\n\n"
+                        f"Log in to your workspace to view the conversation."
+                    )
+                    send_email_async(subject, message, [user.email])
 
         if instance.comment_type == 'public':
             ticket = instance.ticket
@@ -292,6 +342,17 @@ def notify_comment_activities(sender, instance, created, **kwargs):
                     body=instance.body,
                     ticket=ticket
                 )
+
+                if recipient.email:
+                    subject = f"New Reply on Ticket {ticket.ticket_id}"
+                    message = (
+                        f"Hello,\n\n"
+                        f"A new update has been posted on your ticket #{ticket.ticket_id} by {instance.author.first_name or 'System'}.\n\n"
+                        f"Comment Detail:\n"
+                        f"\"{instance.body}\"\n\n"
+                        f"Log in to your dashboard to reply."
+                    )
+                    send_email_async(subject, message, [recipient.email])
 
 
 class SystemAuditLog(models.Model):

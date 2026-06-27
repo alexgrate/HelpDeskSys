@@ -267,6 +267,27 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         updated_instance = serializer.save()
 
+        if old_assignee != updated_instance.assignee and updated_instance.assignee:
+            old_name = old_assignee.email if old_assignee else "None"
+            new_name = updated_instance.assignee.email if updated_instance.assignee else "None"
+
+            TicketComment.objects.create(
+                ticket=updated_instance,
+                comment_type='system',
+                body=f"Assignee changed from '{old_name}' to '{new_name}' by {self.request.user.email}"
+            )
+
+            if updated_instance.submitted_by.email:
+                subject = f"Ticket Claimed: {updated_instance.ticket_id}"
+                message = (
+                    f"Hello {updated_instance.submitted_by.first_name},\n\n"
+                    f"Your ticket #{updated_instance.ticket_id} has been claimed and is now being worked on [4].\n\n"
+                    f"    Assigned Agent: {updated_instance.assignee.first_name} {updated_instance.assignee.last_name} ({updated_instance.assignee.email})\n\n"
+                    f"You will receive further updates as they process your request."
+                )
+                send_email_async(subject, message, [updated_instance.submitted_by.email])
+
+
         if old_status != updated_instance.status:
             log_system_action(
                 request=self.request,
@@ -281,6 +302,15 @@ class TicketViewSet(viewsets.ModelViewSet):
                 comment_type='system',
                 body=f"Status changed from '{old_status}' to '{updated_instance.status}' by {self.request.user.email}"
             )
+
+            if updated_instance.submitted_by.email:
+                subject = f"Ticket Status Update: {updated_instance.ticket_id}"
+                message = (
+                    f"Hello {updated_instance.submitted_by.first_name},\n\n"
+                    f"The status of your ticket #{updated_instance.ticket_id} has been changed from '{old_status}' to '{updated_instance.status}'.\n\n"
+                    f"Log in to your portal to review active comments."
+                )
+                send_email_async(subject, message, [updated_instance.submitted_by.email])
             
         if old_priority != updated_instance.priority:
             log_system_action(
@@ -632,6 +662,15 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
                     )
                 )
 
+                if ticket.submitted_by.email:
+                    subject = f"Dual-Control Authorized: #{ticket.ticket_id}"
+                    message = (
+                        f"Hello {ticket.submitted_by.first_name},\n\n"
+                        f"Your ticket #{ticket.ticket_id} has been fully authorized and approved by the HOD group [1].\n\n"
+                        f"The ticket has been routed to the {department_name} queue for active processing."
+                    )
+                    send_email_async(subject, message, [ticket.submitted_by.email])
+
         elif verdict == 'Returned':
             if prev_step:
                 prev_role_name = prev_step.role.name
@@ -662,6 +701,16 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
                     comment_type='system',
                     body=f"Returned for update by {request.user.email}. Reason: '{comment}'."
                 )
+
+                if ticket.submitted_by.email:
+                    subject = f"Action Required: Ticket #{ticket.ticket_id} Returned for Correction"
+                    message = (
+                        f"Hello {ticket.submitted_by.first_name},\n\n"
+                        f"Your ticket #{ticket.ticket_id} has been returned for update by an HOD [2].\n\n"
+                        f"    HOD Comment: \"{comment}\"\n\n"
+                        f"Please log in to your dashboard to make the required corrections and resubmit."
+                    )
+                    send_email_async(subject, message, [ticket.submitted_by.email])
 
         elif verdict == 'Rejected':
             if prev_step:
@@ -694,6 +743,16 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
                     comment_type='system',
                     body=f"Override rejected by {request.user.email}. Reason: '{comment}'. Ticket closed."
                 )
+
+                if ticket.submitted_by.email:
+                    subject = f"Ticket Closed / Rejected: #{ticket.ticket_id}"
+                    message = (
+                        f"Hello {ticket.submitted_by.first_name},\n\n"
+                        f"Your request #{ticket.ticket_id} has been rejected by the dual-control authority and closed [1, 2].\n\n"
+                        f"    HOD Comment/Reason: \"{comment}\"\n\n"
+                        f"If you believe this is an error, please consult your department supervisor."
+                    )
+                    send_email_async(subject, message, [ticket.submitted_by.email])
 
         response_data = ApprovalRequestSerializer(approval).data
         return Response(response_data, status=status.HTTP_200_OK)
