@@ -51,13 +51,13 @@ export default function KnowledgePage() {
 
           <div className="relative max-w-2xl">
             <div className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-800 text-slate-200 border border-slate-700 mb-4 uppercase tracking-wider">
-              <Sparkles className="size-3 text-blue-400" /> Self-service · Powered by Dash AI
+              <Sparkles className="size-3 text-blue-400" /> Self-service · Powered by Dash MFB
             </div>
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight leading-tight">
               Find the answer before raising a ticket.
             </h1>
             <p className="text-slate-400 mt-2 text-xs md:text-sm font-medium">
-              140+ guides, FAQs, and policy documents — searched by 320 staff members this week.
+              140+ guides, FAQs, and policy documents — searched this week.
             </p>
 
             <form onSubmit={handleSearchSubmit} className="mt-7 relative">

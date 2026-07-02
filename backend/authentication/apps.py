@@ -7,8 +7,13 @@ def create_default_superuser(sender, **kwargs):
     User = get_user_model()
     
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@dash-mfb.com")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "ChangeMe@Dash2026")
-    
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+
+    # Never auto-provision a superuser with a hardcoded/default password.
+    # Require ADMIN_PASSWORD to be set explicitly (e.g. in .env) to bootstrap one.
+    if not admin_password:
+        return
+
     try:
         if not User.objects.filter(is_superuser=True).exists():
             User.objects.create_superuser(

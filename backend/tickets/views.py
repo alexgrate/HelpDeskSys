@@ -1,4 +1,4 @@
-import os, threading
+import os, threading, secrets
 from datetime import timedelta
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
@@ -14,6 +14,7 @@ from authentication.models import Role
 from rest_framework import status, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .models import Ticket, TicketCategory, TicketComment, ApprovalRequest, ApprovalStep, Department, Notification, TicketAttachment, SystemAuditLog
 from .serializers import (
@@ -46,6 +47,35 @@ def send_email_async(subject, message, recipient_list, html_message=None):
 class IsSystemAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.role_name == 'Admin'
+
+
+class AuditLogPagination(PageNumberPagination):
+    """Server-side pagination for the (unbounded, system-wide) audit ledger.
+
+    Also returns KPI aggregates computed over the *entire* filtered set — not just
+    the current page — so the compliance dashboard cards stay accurate while paging.
+    """
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def paginate_queryset(self, queryset, request, view=None):
+        self._stats = queryset.aggregate(
+            total=Count('id'),
+            critical=Count('id', filter=Q(severity='Critical')),
+            auth=Count('id', filter=Q(category='Auth')),
+            config=Count('id', filter=Q(category__in=['Config', 'SLA', 'Role'])),
+        )
+        return super().paginate_queryset(queryset, request, view)
+
+    def get_paginated_response(self, data):
+        return Response({
+            'count': self.page.paginator.count,
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'stats': getattr(self, '_stats', {}),
+            'results': data,
+        })
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all()
@@ -132,7 +162,8 @@ class UserAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsSystemAdmin]
 
     def get_queryset(self):
-        return User.objects.all().annotate(
+        # UserAdminSerializer reads role.name and department.name per row.
+        return User.objects.all().select_related('role', 'department').annotate(
             open_load=Count(
                 'assigned_tickets',
                 filter=~Q(assigned_tickets__status__in=['Resolved', 'Closed'])
@@ -183,7 +214,7 @@ class UserAdminViewSet(viewsets.ModelViewSet):
 
         user = User.objects.create_user(
             email=email,
-            password="ChangeMe@Dash2026",
+            password=secrets.token_urlsafe(16),
             first_name=first_name,
             last_name=last_name,
             role_id=role_id,
@@ -228,26 +259,34 @@ class TicketViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
+        # Optimized base queryset: TicketSerializer reads submitted_by, assignee,
+        # category (+ team + steps/role) and approval_requests/attachments per row.
+        base = Ticket.objects.select_related(
+            'submitted_by', 'assignee', 'category', 'category__team'
+        ).prefetch_related(
+            'attachments', 'approval_requests', 'category__steps__role'
+        )
+
         if user.role_name == 'Admin':
-            return Ticket.objects.all()
+            return base
 
         personal_query = Q(submitted_by=user)
-        
+
         if user.role_name == 'Agent':
             if user.department:
                 category_keys = TicketCategory.objects.filter(team=user.department).values_list('key', flat=True)
-                return Ticket.objects.filter(personal_query | (Q(category__in=category_keys) & ~Q(status__startswith='Pending'))).distinct()
-            return Ticket.objects.filter(personal_query)
+                return base.filter(personal_query | (Q(category__in=category_keys) & ~Q(status__startswith='Pending'))).distinct()
+            return base.filter(personal_query)
 
         elif user.can_approve:
             category_keys = []
             if user.department:
                 category_keys = TicketCategory.objects.filter(team=user.department).values_list('key', flat=True)
                 pending_my_approval = Q(approval_requests__status='Pending', approval_requests__approver_role=user.role_name)
-                return Ticket.objects.filter(personal_query | Q(category__in=category_keys) | pending_my_approval).distinct()
-            return Ticket.objects.filter(personal_query)
-        
-        return Ticket.objects.filter(personal_query)
+                return base.filter(personal_query | Q(category__in=category_keys) | pending_my_approval).distinct()
+            return base.filter(personal_query)
+
+        return base.filter(personal_query)
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -366,8 +405,6 @@ class TicketViewSet(viewsets.ModelViewSet):
         tickets_7d = Ticket.objects.filter(created_at__gte=start_time)
         resolved_7d = tickets_7d.filter(status__in=['Resolved', 'Closed'])
 
-        total_resolved = resolved_7d.count()
-
         whens = []
         for cat in categories_db:
             for priority in ['Critical', 'High', 'Medium', 'Low']:
@@ -382,12 +419,15 @@ class TicketViewSet(viewsets.ModelViewSet):
             time_spent=ExpressionWrapper(F('resolved_at') - F('created_at'), output_field=DurationField())
         )
 
-        sla_compliant_count = 0
-        if total_resolved > 0:
-            sla_compliant_count = sum(
-                1 for t in resolved_annotated 
-                if t.time_spent <= timedelta(hours=t.allowed_hours)
-            )
+        # Materialize once; the per-category SLA breakdown below reuses this list
+        # instead of re-querying the DB for every category.
+        resolved_records = list(resolved_annotated)
+        total_resolved = len(resolved_records)
+
+        sla_compliant_count = sum(
+            1 for t in resolved_records
+            if t.time_spent <= timedelta(hours=t.allowed_hours)
+        )
 
         compliance_rate = (sla_compliant_count / total_resolved * 100) if total_resolved > 0 else 0.0
 
@@ -430,10 +470,12 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         sla_by_dept = []
         for cat_key, cat_obj in categories_map.items():
-            cat_resolved = resolved_annotated.filter(category=cat_key)
-            cat_total_resolved = cat_resolved.count()
+            # category_id holds the category key (FK uses to_field='key'); reading it
+            # avoids a lazy DB fetch of the related category per record.
+            cat_records = [t for t in resolved_records if t.category_id == cat_key]
+            cat_total_resolved = len(cat_records)
             cat_compliant = sum(
-                1 for t in cat_resolved 
+                1 for t in cat_records
                 if t.time_spent <= timedelta(hours=t.allowed_hours)
             )
 
@@ -483,7 +525,10 @@ class TicketViewSet(viewsets.ModelViewSet):
 
 
 class TicketCategoryViewSet(viewsets.ModelViewSet):
-    queryset = TicketCategory.objects.all()  
+    # TicketCategorySerializer reads team.name and nested steps (+ role, department).
+    queryset = TicketCategory.objects.all().select_related('team').prefetch_related(
+        'steps__role', 'steps__department'
+    )
     serializer_class = TicketCategorySerializer
 
     def get_permissions(self):
@@ -527,13 +572,20 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+
+        # ApprovalRequestSerializer reads ticket (+ submitted_by), requested_by and
+        # ticket.attachments per row; join/prefetch them to avoid N+1.
+        base = ApprovalRequest.objects.select_related(
+            'ticket', 'ticket__submitted_by', 'requested_by', 'approved_by', 'approver_department'
+        ).prefetch_related('ticket__attachments')
+
         if user.role_name == 'Admin':
-            return ApprovalRequest.objects.all()
+            return base
 
         pending_for_me = Q(status='Pending', approver_role=user.role_name, approver_department=user.department)
         decided_by_me = Q(approved_by=user)
-        
-        return ApprovalRequest.objects.filter(pending_for_me | decided_by_me).distinct()
+
+        return base.filter(pending_for_me | decided_by_me).distinct()
 
     def create(self, request, *args, **kwargs):
         return Response(
@@ -763,7 +815,10 @@ class NotificationViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'patch', 'delete', 'options', 'head']  
 
     def get_queryset(self):
-        return Notification.objects.filter(recipient=self.request.user)
+        # NotificationSerializer reads actor (name/branch) and ticket per row.
+        return Notification.objects.filter(
+            recipient=self.request.user
+        ).select_related('actor', 'ticket')
 
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request):
@@ -913,10 +968,22 @@ def log_system_action(request, action_text, category, ticket=None, severity="Inf
 class SystemAuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = SystemAuditLogSerializer
     permission_classes = [permissions.IsAuthenticated, IsSystemAdmin]
+    pagination_class = AuditLogPagination
 
     def get_queryset(self):
-        queryset = SystemAuditLog.objects.all()
+        # SystemAuditLogSerializer reads ticket.ticket_id per row (actor/email are cached fields).
+        queryset = SystemAuditLog.objects.all().select_related('ticket')
         category = self.request.query_params.get('category')
         if category and category != 'All':
             queryset = queryset.filter(category=category)
+
+        # Server-side search so it spans the whole ledger, not just the loaded page.
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(action__icontains=search) |
+                Q(actor_name_cache__icontains=search) |
+                Q(email_cache__icontains=search) |
+                Q(ticket__ticket_id__icontains=search)
+            )
         return queryset

@@ -179,19 +179,38 @@ STORAGES = {
     },
 }
 
+# --- Microsoft Graph (app-only) e-mail settings ---
+MS_GRAPH_TENANT_ID = os.environ.get('MS_GRAPH_TENANT_ID', '').strip()
+MS_GRAPH_CLIENT_ID = os.environ.get('MS_GRAPH_CLIENT_ID', '').strip()
+MS_GRAPH_CLIENT_SECRET = os.environ.get('MS_GRAPH_CLIENT_SECRET', '')
+MS_GRAPH_SENDER = os.environ.get('MS_GRAPH_SENDER', '').strip()
+_GRAPH_CONFIGURED = all([
+    MS_GRAPH_TENANT_ID, MS_GRAPH_CLIENT_ID, MS_GRAPH_CLIENT_SECRET, MS_GRAPH_SENDER
+])
+
+EMAIL_PROVIDER = os.environ.get('DJANGO_EMAIL_PROVIDER', '').strip().lower()
+
 EMAIL_HOST = os.environ.get('DJANGO_EMAIL_HOST')
 
-if EMAIL_HOST:
+if EMAIL_PROVIDER == 'graph' or (EMAIL_PROVIDER == '' and _GRAPH_CONFIGURED):
+    # Send via the Microsoft Graph API (see helpdesk_app/email_backends.py).
+    EMAIL_BACKEND = 'helpdesk_app.email_backends.MicrosoftGraphEmailBackend'
+elif EMAIL_PROVIDER == 'smtp' or (EMAIL_PROVIDER == '' and EMAIL_HOST):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', 587))
-    EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_HOST_USER', '')
-    EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_HOST_PASSWORD', '')
+    EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST", "").strip()
+    EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "").strip()
+    EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
     EMAIL_USE_TLS = os.environ.get('DJANGO_EMAIL_USE_TLS', 'True').lower() in ['true', '1', 't', 'y', 'yes']
     EMAIL_USE_SSL = os.environ.get('DJANGO_EMAIL_USE_SSL', 'False').lower() in ['true', '1', 't', 'y', 'yes']
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL')
+# Graph sends "as" MS_GRAPH_SENDER; keep DEFAULT_FROM_EMAIL aligned for the SMTP/console paths.
+DEFAULT_FROM_EMAIL = (
+    os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "").strip() or MS_GRAPH_SENDER
+)
+
 
 FRONTEND_URL = os.environ.get('DJANGO_FRONTEND_URL', 'http://localhost:5173')
 

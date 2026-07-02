@@ -322,7 +322,8 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
         return "Unknown Requester"
 
     def get_attachments(self, obj):
-        return obj.ticket.attachments.count()
+        # len() over the prefetched queryset uses the cache; .count() would re-query per row.
+        return len(obj.ticket.attachments.all())
 
 
 class ApprovalStepNestedSerializer(serializers.ModelSerializer):

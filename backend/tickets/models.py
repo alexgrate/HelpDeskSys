@@ -82,6 +82,10 @@ class Ticket(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['-created_at']),
+        ]
 
     def save(self, *args, **kwargs):
         if self.status in ['Resolved', 'Closed']:
@@ -140,6 +144,9 @@ class TicketComment(models.Model):
 
     class Meta:
         ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['ticket', 'created_at']),
+        ]
 
     def __str__(self):
         return f"{self.comment_type} on {self.ticket.ticket_id} by {self.author or 'System'}"
@@ -167,6 +174,9 @@ class ApprovalRequest(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'approver_role']),
+        ]
 
     def __str__(self):
         return f"Approval {self.id} for {self.ticket.ticket_id}"
@@ -209,6 +219,9 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['recipient', 'unread']),
+        ]
 
     def __str__(self):
         return f"{self.kind} alert for {self.recipient.email} - {self.title}"
@@ -268,6 +281,8 @@ def notify_managers_of_pending_approval(sender, instance, created, **kwargs):
             role__name=instance.approver_role,
             department=instance.approver_department
         )
+
+        recipient_list = []
         for mgr in managers:
             Notification.objects.create(
                 recipient=mgr,
@@ -275,27 +290,28 @@ def notify_managers_of_pending_approval(sender, instance, created, **kwargs):
                 kind='approval',
                 title=f"Approval needed · {instance.ticket.ticket_id}",
                 body=f"{instance.requested_by.first_name} {instance.requested_by.last_name} requests your approval on: {instance.ticket.summary}.",
-                ticket=instance.ticket 
+                ticket=instance.ticket
             )
+            if mgr.email:
+                recipient_list.append(mgr.email)
 
-            recipient_list = [mgr.email for mgr in managers if mgr.email]
-            if recipient_list:
-                subject = f"Action Required: Dual-Control Approval Needed for {instance.ticket.ticket_id}"
-                message = (
-                    f"Hello Manager,\n\n"
-                    f"{instance.requested_by.first_name} {instance.requested_by.last_name} has submitted a high-risk request that requires your dual-control authorization [1].\n\n"
-                    f"    Ticket ID: {instance.ticket.ticket_id}\n"
-                    f"    Summary: {instance.ticket.summary}\n"
-                    f"    Priority: {instance.ticket.priority}\n"
-                    f"    Current Step: {instance.category}\n\n"
-                    f"Please log in to your Approvals Hub to review and execute your decision [1, 2]."
-                )
-                send_email_async(subject, message, recipient_list)
+        if recipient_list:
+            subject = f"Action Required: Dual-Control Approval Needed for {instance.ticket.ticket_id}"
+            message = (
+                f"Hello Manager,\n\n"
+                f"{instance.requested_by.first_name} {instance.requested_by.last_name} has submitted a high-risk request that requires your dual-control authorization [1].\n\n"
+                f"    Ticket ID: {instance.ticket.ticket_id}\n"
+                f"    Summary: {instance.ticket.summary}\n"
+                f"    Priority: {instance.ticket.priority}\n"
+                f"    Current Step: {instance.category}\n\n"
+                f"Please log in to your Approvals Hub to review and execute your decision [1, 2]."
+            )
+            send_email_async(subject, message, recipient_list)
 
 @receiver(post_save, sender=TicketComment)
 def notify_comment_activities(sender, instance, created, **kwargs):
     if created:
-        from ticket.views import send_email_async
+        from tickets.views import send_email_async
 
         mentions = re.findall(r'@(\w+)', instance.body.lower())
         notified_users = set()
@@ -388,6 +404,10 @@ class SystemAuditLog(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['category']),
+            models.Index(fields=['-created_at']),
+        ]
 
     def __str__(self):
         return f"{self.created_at} - {self.action}"

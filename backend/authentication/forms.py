@@ -1,6 +1,7 @@
+import secrets
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
-from .models import User  
+from .models import User
 
 class CustomUserCreationForm(UserCreationForm):
     class Meta:
@@ -21,7 +22,9 @@ class CustomUserCreationForm(UserCreationForm):
         p2 = cleaned_data.get("password2")
 
         if not p1 and not p2:
-            default_pw = "ChangeMe@Dash2026"
+            # No password supplied by the admin: assign a random one-time secret.
+            # The user gains access via the password-reset ("Forgot Password") flow.
+            default_pw = secrets.token_urlsafe(16)
             cleaned_data["password1"] = default_pw
             cleaned_data["password2"] = default_pw
             

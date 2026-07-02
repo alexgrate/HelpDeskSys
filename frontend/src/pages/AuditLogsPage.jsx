@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollText, Search, Filter, Download, ShieldCheck, ShieldAlert, UserCog, Settings2, Eye, Lock, LogIn, RefreshCw, Calendar, ChevronDown, Loader2, AlertCircle } from "lucide-react";
@@ -18,23 +18,45 @@ const catIcon = {
 };
 
 export default function AuditLogsPage() {
+  const PAGE_SIZE = 25;
+
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [cat, setCat] = useState("All");
   const [range, setRange] = useState("Last 24 hours");
 
-  // 1. Fetch live compliance logs from the backend on mount and tab changes [1]
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrev, setHasPrev] = useState(false);
+  const [stats, setStats] = useState({ total: 0, critical: 0, auth: 0, config: 0 });
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQuery(query);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
   useEffect(() => {
     const fetchSystemLogs = async () => {
       setIsLoading(true);
       setError("");
       try {
-        // Fetch from read-only audit endpoint with active category filter [1]
-        const res = await apiFetch(`/audit-logs/?category=${cat}`);
+        const params = new URLSearchParams({ category: cat, page: String(page) });
+        if (debouncedQuery.trim()) params.set("search", debouncedQuery.trim());
+        const res = await apiFetch(`/audit-logs/?${params.toString()}`);
         if (res.ok) {
-          setLogs(await res.json());
+          const data = await res.json();
+          setLogs(data.results ?? []);
+          setTotalCount(data.count ?? 0);
+          setHasNext(Boolean(data.next));
+          setHasPrev(Boolean(data.previous));
+          setStats(data.stats ?? { total: data.count ?? 0, critical: 0, auth: 0, config: 0 });
         } else {
           setError("Failed to retrieve system compliance records.");
         }
@@ -45,29 +67,14 @@ export default function AuditLogsPage() {
       }
     };
     fetchSystemLogs();
-  }, [cat]); // Re-fetch whenever the active category changes [1]
+  }, [cat, debouncedQuery, page]);
 
-  // 2. Perform client-side text search over the server-filtered list [1]
-  const filtered = useMemo(() => {
-    return logs.filter(
-      (l) =>
-        query === "" ||
-        l.actor.toLowerCase().includes(query.toLowerCase()) ||
-        l.email.toLowerCase().includes(query.toLowerCase()) ||
-        l.action.toLowerCase().includes(query.toLowerCase()) ||
-        (l.ticket || "").toLowerCase().includes(query.toLowerCase())
-    );
-  }, [logs, query]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  // 3. Dynamically calculate stats based on the active dataset [1]
-  const counts = useMemo(() => {
-    return {
-      total: logs.length,
-      critical: logs.filter((l) => l.severity === "Critical").length,
-      auth: logs.filter((l) => l.category === "Auth").length,
-      config: logs.filter((l) => ["Config", "SLA", "Role"].includes(l.category)).length,
-    };
-  }, [logs]);
+  const selectCategory = (c) => {
+    setCat(c);
+    setPage(1);
+  };
 
   return (
     <div className="space-y-6 text-left font-sans">
@@ -91,15 +98,13 @@ export default function AuditLogsPage() {
         </div>
       </header>
 
-      {/* Dynamic KPI Cards */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="Events Listed" value={counts.total.toLocaleString()} tone="info" icon={ScrollText} />
-        <Stat label="Critical actions" value={counts.critical} tone="critical" icon={ShieldAlert} />
-        <Stat label="Auth events" value={counts.auth} tone="warning" icon={LogIn} />
-        <Stat label="Config changes" value={counts.config} tone="primary" icon={Settings2} />
+        <Stat label="Total events" value={(stats.total ?? 0).toLocaleString()} tone="info" icon={ScrollText} />
+        <Stat label="Critical actions" value={stats.critical ?? 0} tone="critical" icon={ShieldAlert} />
+        <Stat label="Auth events" value={stats.auth ?? 0} tone="warning" icon={LogIn} />
+        <Stat label="Config changes" value={stats.config ?? 0} tone="primary" icon={Settings2} />
       </section>
 
-      {/* Filters Toolbar */}
       <div className="rounded-2xl bg-white border border-slate-200 p-4 flex flex-col lg:flex-row gap-3 lg:items-center shadow-sm">
         <div className="relative flex-1">
           <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -125,7 +130,7 @@ export default function AuditLogsPage() {
             return (
               <button
                 key={c}
-                onClick={() => setCat(c)}
+                onClick={() => selectCategory(c)}
                 className={cn(
                   "px-3.5 h-8 text-xs rounded-full border transition font-bold cursor-pointer",
                   active
@@ -140,11 +145,10 @@ export default function AuditLogsPage() {
         </div>
       </div>
 
-      {/* Main Table Grid */}
       <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm">
         <div className="px-5 h-12 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
           <div className="text-xs text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <Filter className="size-3.5 text-blue-600" /> Showing {filtered.length} of {logs.length} events
+            <Filter className="size-3.5 text-blue-600" /> Showing {logs.length} of {totalCount.toLocaleString()} events
           </div>
           <div className="text-[10px] text-slate-400 font-bold uppercase">Sorted by most recent</div>
         </div>
@@ -161,13 +165,13 @@ export default function AuditLogsPage() {
           </div>
         )}
 
-        {!isLoading && !error && filtered.length === 0 && (
+        {!isLoading && !error && logs.length === 0 && (
           <div className="p-12 text-center text-xs font-bold text-slate-400">
             No compliance log records found matching those parameters.
           </div>
         )}
 
-        {!isLoading && !error && filtered.length > 0 && (
+        {!isLoading && !error && logs.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -181,7 +185,7 @@ export default function AuditLogsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((l, i) => {
+                {logs.map((l, i) => {
                   const Icon = catIcon[l.category] || ScrollText;
                   return (
                     <motion.tr
@@ -234,14 +238,22 @@ export default function AuditLogsPage() {
           </div>
         )}
 
-        {!isLoading && !error && filtered.length > 0 && (
+        {!isLoading && !error && totalCount > 0 && (
           <div className="px-5 h-12 flex items-center justify-between border-t border-slate-200 bg-slate-50/50 text-xs font-bold text-slate-400 uppercase">
-            <div>Page 1 of 1 · Showing latest {filtered.length} records</div>
+            <div>Page {page} of {totalPages} · {totalCount.toLocaleString()} total records</div>
             <div className="flex items-center gap-1">
-              <button className="px-3 h-8 rounded-md border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-600 cursor-pointer" disabled>
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={!hasPrev}
+                className="px-3 h-8 rounded-md border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white text-slate-600 cursor-pointer"
+              >
                 Previous
               </button>
-              <button className="px-3 h-8 rounded-md border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-600 cursor-pointer" disabled>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasNext}
+                className="px-3 h-8 rounded-md border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white text-slate-600 cursor-pointer"
+              >
                 Next
               </button>
             </div>
