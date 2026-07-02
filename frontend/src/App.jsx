@@ -12,6 +12,7 @@ import Approvals from "./pages/Approvals";
 import AdminPage from "./pages/Admin";
 import KnowledgePage from "./pages/KnowledgePage";
 import ArticlePage from "./pages/ArticlePage";
+import ArticleEditor from "./pages/ArticleEditor";
 import ReportsPage from "./pages/ReportsPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import AuditLogsPage from "./pages/AuditLogsPage";
@@ -192,6 +193,21 @@ export default function App() {
             <ProtectedRoute allowedRoles={["Staff", "Agent", "Approver", "Admin"]}>
               <AdaptiveShell>
                 <KnowledgePage />
+              </AdaptiveShell>
+            </ProtectedRoute>
+          } />
+          {/* Admin authoring routes — declared before /kb/:slug (static segments rank higher) */}
+          <Route path="/kb/new" element={
+            <ProtectedRoute allowedRoles={["Admin"]}>
+              <AdaptiveShell>
+                <ArticleEditor />
+              </AdaptiveShell>
+            </ProtectedRoute>
+          } />
+          <Route path="/kb/:slug/edit" element={
+            <ProtectedRoute allowedRoles={["Admin"]}>
+              <AdaptiveShell>
+                <ArticleEditor />
               </AdaptiveShell>
             </ProtectedRoute>
           } />

@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
+from django.utils.text import slugify
 
 User = get_user_model()
 
@@ -411,3 +412,55 @@ class SystemAuditLog(models.Model):
 
     def __str__(self):
         return f"{self.created_at} - {self.action}"
+
+
+class KnowledgeArticle(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('published', 'Published'),
+    ]
+
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True, blank=True)
+    summary = models.CharField(max_length=300, blank=True)
+    content = models.TextField()
+
+    category = models.ForeignKey(
+        'TicketCategory', on_delete=models.PROTECT, to_field='key', related_name='articles'
+    )
+    author = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='authored_articles'
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='published')
+
+    views = models.PositiveIntegerField(default=0)
+    helpful_count = models.PositiveIntegerField(default=0)
+    not_helpful_count = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['-updated_at']),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.title)[:200] or 'article'
+            candidate = base
+            n = 2
+            while KnowledgeArticle.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
+                candidate = f"{base}-{n}"
+                n += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
+
+    @property
+    def read_minutes(self):
+        return max(1, round(len((self.content or '').split()) / 200))
+
+    def __str__(self):
+        return self.title

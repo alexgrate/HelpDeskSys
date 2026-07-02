@@ -16,12 +16,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from .models import Ticket, TicketCategory, TicketComment, ApprovalRequest, ApprovalStep, Department, Notification, TicketAttachment, SystemAuditLog
+from .models import Ticket, TicketCategory, TicketComment, ApprovalRequest, ApprovalStep, Department, Notification, TicketAttachment, SystemAuditLog, KnowledgeArticle
 from .serializers import (
-    TicketSerializer, TicketCreateSerializer, TicketCategorySerializer, 
+    TicketSerializer, TicketCreateSerializer, TicketCategorySerializer,
     TicketCommentSerializer, TicketCommentCreateSerializer, ApprovalRequestSerializer,
     DepartmentSerializer, RoleSerializer, UserAdminSerializer, NotificationSerializer,
-    SystemAuditLogSerializer
+    SystemAuditLogSerializer,
+    KnowledgeArticleListSerializer, KnowledgeArticleDetailSerializer, KnowledgeArticleWriteSerializer
 )
 from .permissions import IsNormalStaff, IsManagerOrAdmin, IsDepartmentAgentOrHOD
 
@@ -50,11 +51,6 @@ class IsSystemAdmin(permissions.BasePermission):
 
 
 class AuditLogPagination(PageNumberPagination):
-    """Server-side pagination for the (unbounded, system-wide) audit ledger.
-
-    Also returns KPI aggregates computed over the *entire* filtered set — not just
-    the current page — so the compliance dashboard cards stay accurate while paging.
-    """
     page_size = 25
     page_size_query_param = 'page_size'
     max_page_size = 100
@@ -815,7 +811,6 @@ class NotificationViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'patch', 'delete', 'options', 'head']  
 
     def get_queryset(self):
-        # NotificationSerializer reads actor (name/branch) and ticket per row.
         return Notification.objects.filter(
             recipient=self.request.user
         ).select_related('actor', 'ticket')
@@ -856,7 +851,6 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
 @login_required
 def protected_media_serve(request, path):
-    # PATH TRAVERSAL DEFENSE: Resolve absolute paths and strip directory escape tokens
     safe_path = os.path.normpath(path).lstrip('/')
     if safe_path.startswith('..') or os.path.isabs(safe_path):
         return HttpResponseForbidden("Access Denied: Path security violation.")
@@ -971,13 +965,11 @@ class SystemAuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = AuditLogPagination
 
     def get_queryset(self):
-        # SystemAuditLogSerializer reads ticket.ticket_id per row (actor/email are cached fields).
         queryset = SystemAuditLog.objects.all().select_related('ticket')
         category = self.request.query_params.get('category')
         if category and category != 'All':
             queryset = queryset.filter(category=category)
 
-        # Server-side search so it spans the whole ledger, not just the loaded page.
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             queryset = queryset.filter(
@@ -987,3 +979,93 @@ class SystemAuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 Q(ticket__ticket_id__icontains=search)
             )
         return queryset
+
+
+class KnowledgeArticleViewSet(viewsets.ModelViewSet):
+    lookup_field = 'slug'
+
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return KnowledgeArticleWriteSerializer
+        if self.action == 'retrieve':
+            return KnowledgeArticleDetailSerializer
+        return KnowledgeArticleListSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), IsSystemAdmin()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = KnowledgeArticle.objects.select_related('category', 'category__team', 'author')
+
+        if not (user.is_authenticated and user.role_name == 'Admin'):
+            qs = qs.filter(status='published')
+
+        category = self.request.query_params.get('category')
+        if category and category not in ('', 'All'):
+            qs = qs.filter(category__key=category)
+
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search) |
+                Q(summary__icontains=search) |
+                Q(content__icontains=search)
+            )
+
+        if self.request.query_params.get('sort') == 'popular':
+            qs = qs.order_by('-views', '-updated_at')
+        return qs
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        KnowledgeArticle.objects.filter(pk=instance.pk).update(views=F('views') + 1)
+        instance.views += 1
+        return Response(self.get_serializer(instance).data)
+
+    def perform_create(self, serializer):
+        article = serializer.save()
+        log_system_action(
+            request=self.request,
+            action_text=f"Published knowledge article: '{article.title}'",
+            category="Config",
+            severity="Notice",
+        )
+
+    def perform_update(self, serializer):
+        article = serializer.save()
+        log_system_action(
+            request=self.request,
+            action_text=f"Updated knowledge article: '{article.title}'",
+            category="Config",
+            severity="Notice",
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def feedback(self, request, slug=None):
+        article = self.get_object()
+        vote = request.data.get('vote')
+        if vote == 'up':
+            KnowledgeArticle.objects.filter(pk=article.pk).update(helpful_count=F('helpful_count') + 1)
+        elif vote == 'down':
+            KnowledgeArticle.objects.filter(pk=article.pk).update(not_helpful_count=F('not_helpful_count') + 1)
+        else:
+            return Response({"detail": "vote must be 'up' or 'down'."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Feedback recorded."}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def categories(self, request):
+        cats = TicketCategory.objects.filter(is_active=True).select_related('team').annotate(
+            article_count=Count('articles', filter=Q(articles__status='published'))
+        ).order_by('label')
+        return Response([{
+            "key": c.key,
+            "label": c.label,
+            "description": c.description,
+            "icon_name": c.icon_name,
+            "color": c.color,
+            "department": c.team.name if c.team else None,
+            "article_count": c.article_count,
+        } for c in cats])

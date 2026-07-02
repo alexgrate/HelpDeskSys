@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from authentication.models import Role
-from .models import Ticket, TicketCategory, TicketAttachment, TicketComment, ApprovalRequest, ApprovalStep, Department, Notification, SystemAuditLog
+from .models import Ticket, TicketCategory, TicketAttachment, TicketComment, ApprovalRequest, ApprovalStep, Department, Notification, SystemAuditLog, KnowledgeArticle
 
 User = get_user_model()
 
@@ -467,3 +467,48 @@ class SystemAuditLogSerializer(serializers.ModelSerializer):
 
     def get_date(self, obj):
         return obj.created_at.date().isoformat()
+
+
+class KnowledgeArticleListSerializer(serializers.ModelSerializer):
+    category_key = serializers.CharField(source='category.key', read_only=True)
+    category_label = serializers.CharField(source='category.label', read_only=True)
+    category_color = serializers.CharField(source='category.color', read_only=True)
+    category_icon = serializers.CharField(source='category.icon_name', read_only=True)
+    author_name = serializers.SerializerMethodField()
+    read_minutes = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = KnowledgeArticle
+        fields = [
+            'id', 'slug', 'title', 'summary', 'status',
+            'category_key', 'category_label', 'category_color', 'category_icon',
+            'author_name', 'views', 'helpful_count', 'not_helpful_count',
+            'read_minutes', 'created_at', 'updated_at',
+        ]
+
+    def get_author_name(self, obj):
+        if obj.author:
+            return f"{obj.author.first_name} {obj.author.last_name}".strip() or obj.author.email
+        return "Dash MFB"
+
+
+class KnowledgeArticleDetailSerializer(KnowledgeArticleListSerializer):
+    category_department = serializers.CharField(source='category.team.name', read_only=True, allow_null=True)
+
+    class Meta(KnowledgeArticleListSerializer.Meta):
+        fields = KnowledgeArticleListSerializer.Meta.fields + ['content', 'category_department']
+
+
+class KnowledgeArticleWriteSerializer(serializers.ModelSerializer):
+    category = serializers.SlugRelatedField(slug_field='key', queryset=TicketCategory.objects.all())
+
+    class Meta:
+        model = KnowledgeArticle
+        fields = ['slug', 'title', 'summary', 'content', 'category', 'status']
+        read_only_fields = ['slug']
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            validated_data['author'] = request.user
+        return super().create(validated_data)

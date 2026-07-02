@@ -1,12 +1,37 @@
 @import "tailwindcss";
 
 @theme {
-  --color-blue-50: #f4f0f9;   
+  --color-blue-50: #f4f0f9;
   --color-blue-100: #e9e1f3;
   --color-blue-200: #d3c3e7;
   --color-blue-300: #b89fdb;
-  --color-blue-400: #7a3eb5; 
+  --color-blue-400: #7a3eb5;
   --color-blue-500: #5e17eb;
-  --color-blue-600: #4d1d6f;  
+  --color-blue-600: #4d1d6f;
   --color-blue-700: #3c1658;
 }
+
+/* Rendered Markdown (knowledge-base article body + editor preview) */
+.md-content { text-align: left; }
+.md-content > :first-child { margin-top: 0; }
+.md-content h1 { font-size: 1.25rem; line-height: 1.75rem; font-weight: 800; letter-spacing: -0.02em; color: #0f172a; margin: 1.5rem 0 0.75rem; }
+.md-content h2 { font-size: 1rem; line-height: 1.5rem; font-weight: 700; letter-spacing: -0.01em; color: #0f172a; margin: 1.5rem 0 0.625rem; }
+.md-content h3 { font-size: 0.875rem; font-weight: 700; color: #1e293b; margin: 1.25rem 0 0.5rem; }
+.md-content p { font-size: 0.75rem; line-height: 1.6; font-weight: 600; color: #475569; margin: 0.625rem 0; }
+.md-content ul, .md-content ol { font-size: 0.75rem; font-weight: 600; color: #475569; margin: 0.625rem 0; padding-left: 1.25rem; }
+.md-content ul { list-style: disc; }
+.md-content ol { list-style: decimal; }
+.md-content li { margin: 0.35rem 0; line-height: 1.6; }
+.md-content a { color: #5e17eb; font-weight: 700; text-decoration: none; }
+.md-content a:hover { text-decoration: underline; }
+.md-content strong { font-weight: 700; color: #1e293b; }
+.md-content em { font-style: italic; }
+.md-content blockquote { border-left: 4px solid #d3c3e7; background: #f4f0f9; padding: 0.5rem 0 0.5rem 1rem; margin: 0.75rem 0; border-radius: 0 0.5rem 0.5rem 0; font-size: 0.75rem; font-weight: 600; color: #475569; }
+.md-content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.6875rem; font-weight: 700; color: #3c1658; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.25rem; padding: 0.1rem 0.35rem; }
+.md-content pre { margin: 0.75rem 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 0.875rem; overflow-x: auto; }
+.md-content pre code { background: none; border: 0; padding: 0; color: #334155; font-size: 0.6875rem; line-height: 1.6; display: block; }
+.md-content table { width: 100%; font-size: 0.75rem; border-collapse: collapse; margin: 0.75rem 0; border: 1px solid #e2e8f0; }
+.md-content th { text-align: left; font-weight: 700; padding: 0.5rem 0.75rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #334155; }
+.md-content td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; color: #475569; font-weight: 600; }
+.md-content hr { margin: 1.25rem 0; border: 0; border-top: 1px solid #e2e8f0; }
+.md-content img { max-width: 100%; border-radius: 0.5rem; margin: 0.75rem 0; }
