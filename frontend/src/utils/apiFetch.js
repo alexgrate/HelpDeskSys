@@ -7,7 +7,11 @@ export const getApiBaseUrl = () => {
     return "http://127.0.0.1:8000/api";
   }
 
-  return import.meta.env.VITE_API_BASE_URL;
+  // Production: use the build-time VITE_API_BASE_URL if set, otherwise fall back to a
+  // same-origin "/api" (works when the backend is served under /api on the same host).
+  // This prevents the "undefined/..." requests when the env var is missing.
+  const base = import.meta.env.VITE_API_BASE_URL || "/api";
+  return base.replace(/\/$/, "");
 };
 
 export const API_BASE_URL = getApiBaseUrl();
